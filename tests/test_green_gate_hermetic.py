@@ -1,15 +1,12 @@
 """Contract tests for the institution green gate.
 
-Per @CTR-0088 and the green-gate pattern documented in
-plan-011 §1.3, the aggregator must exist, delegate correctly,
-and default to --hermetic.
+Per `@CTR-0088` and `@INV-0093`, the aggregator must exist,
+delegate correctly, and default to `--hermetic`.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATE = REPO_ROOT / "green-gate" / "check-institution.sh"

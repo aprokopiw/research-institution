@@ -1,0 +1,4 @@
+# Test fixture: an empty catalog. The bootstrap script must still
+# complete successfully even when the catalog has no entries.
+
+# Intentionally empty.
