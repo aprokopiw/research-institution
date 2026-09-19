@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "research-institution"
+version = "0.1.0"
+description = "Aggregator for math-engine + pi_monitor + math research programs"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+  {name = "Andrei Prokopiw", email = "aprokopiw@users.noreply.github.com"},
+]
+# Runtime deps are intentionally empty: this repo is a thin
+# orchestrator. Each sub-check invokes a separate binary
+# (mathlint, pi-monitor, mathlint-kaplansky, etc.) that lives
+# in its own repo. Pip-installing research-institution does NOT
+# pull in math-engine, pi_monitor, or any research program —
+# that would create a hidden runtime dependency.
+dependencies = []
+
+# Dev deps pin the three sibling repos at their current versions.
+# When plan-011 ships, these become the canonical pins for
+# "what versions of math-engine, kaplansky, and pi_monitor does
+# this institution expect?". Tests + the green gate use these
+# pins to verify the institution is wired at the expected
+# versions.
+[dependency-groups]
+dev = [
+  "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@v0.1.0",
+  "kaplansky-research-program @ git+https://github.com/aprokopiw/math-kaplansky.git@v0.1.0",
+  "pi-monitor @ git+https://github.com/aprokopiw/pi_monitor.git@v0.2.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["research_institution"]
+
+# (research_institution/ is reserved for any future Python glue
+# this repo might need. Today the repo is scripts + docs + tests
+# only; no Python package. The packages = ["research_institution"]
+# declaration is forward-compatible.)
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "S", "C4", "DTZ", "PIE", "RET", "SIM"]
+ignore = ["S101", "S104"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
