@@ -10,9 +10,10 @@ entry_point = "kaplansky.mathlint_plugin:register"
 local_path = "$HOME/Documents/andrei/kaplansky"
 mathlint_pin = "v0.1.0"
 live_credentials_required = true
-live_credential_env_vars = ["MATHLINT_MODEL_ROUTE", "OPENAI_API_KEY"]
-launch_command = "mathlint-kaplansky start"
-launch_ready_command = "mathlint-kaplansky status"
-launch_log_path = "$HOME/.local/state/kaplansky/logs/supervisor.log"
-launch_pid_field = "supervisor_pid"
+# Per @ADR-0001: kaplansky authenticates via pi's OpenAI Codex OAuth grant
+# (stored in ~/.pi/agent/auth.json), not an OpenAI Platform API key. The
+# `OPENAI_API_KEY` env var is therefore absent from this list — mathlint
+# delegates auth for openai-codex/* routes to `pi auth check` and never
+# reads OPENAI_API_KEY. See docs/semantic/adr/adr-0001-*.md.
+live_credential_env_vars = ["MATHLINT_MODEL_ROUTE"]
 check_program_script = "scripts/check-program-institution.sh"

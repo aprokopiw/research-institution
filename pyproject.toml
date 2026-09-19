@@ -18,19 +18,21 @@ authors = [
 # in its own repo. Pip-installing research-institution does NOT
 # pull in math-engine, pi_monitor, or any research program —
 # that would create a hidden runtime dependency.
-dependencies = []
+dependencies = [
+  "typer>=0.12",
+]
 
 # Dev deps pin the three sibling repos at their current versions.
-# When plan-011 ships, these become the canonical pins for
-# "what versions of math-engine, kaplansky, and pi_monitor does
-# this institution expect?". Tests + the green gate use these
-# pins to verify the institution is wired at the expected
-# versions.
+# When the institution grows its semantic-record catalogue to
+# cite these as `@INV-NNNN` "institution expected pins" records,
+# they become the canonical anchors. Today the pins are operator
+# judgment, governed by `@CTR-0088`.
 [dependency-groups]
 dev = [
   "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@v0.1.0",
   "kaplansky-research-program @ git+https://github.com/aprokopiw/math-kaplansky.git@v0.1.0",
   "pi-monitor @ git+https://github.com/aprokopiw/pi_monitor.git@v0.2.0",
+  "pytest>=8.0",
 ]
 
 [tool.hatch.metadata]
