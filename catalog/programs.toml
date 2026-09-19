@@ -1,0 +1,14 @@
+# catalog/programs.toml — the institution's in-flight research
+# programs. Each entry satisfies `catalog/schema.toml`. Tests
+# in `tests/test_catalog_consistent.py` enforce the schema.
+
+[[programs]]
+name = "kaplansky"
+display_name = "Kaplansky Research Program"
+repository = "https://github.com/aprokopiw/math-kaplansky"
+entry_point = "kaplansky.mathlint_plugin:register"
+local_path = "$HOME/Documents/andrei/kaplansky"
+mathlint_pin = "v0.1.0"
+live_credentials_required = true
+live_credential_env_vars = ["MATHLINT_MODEL_ROUTE", "OPENAI_API_KEY"]
+check_program_script = "scripts/check-program-institution.sh"

@@ -1,0 +1,26 @@
+# catalog/schema.toml — the contract every entry in
+# `catalog/programs.toml` must satisfy. The schema is the
+# source of truth; the contract test
+# `tests/test_catalog_consistent.py` enforces it.
+
+# A program is a math research program in flight at this
+# institution. Each entry is one program.
+
+[[programs]]
+name = ""                              # required, unique, ^[a-z][a-z0-9_-]*$
+display_name = ""                      # required, free-form human-readable label
+repository = ""                        # required, git URL (https://...)
+entry_point = ""                       # required, pyproject entry-point under mathlint.providers
+local_path = ""                        # required, operator-local clone path; starts with / or $HOME
+mathlint_pin = ""                      # required, git tag/commit/branch mathlint must be pinned to
+live_credentials_required = true       # required bool
+live_credential_env_vars = []          # required list of env var names; empty list OK
+check_program_script = ""              # required, path relative to program repo root
+
+# Cross-entries invariants (enforced by tests/test_catalog_consistent.py,
+# not by toml):
+#  - `name` MUST be unique across all entries.
+#  - `entry_point` final segment (after the last dot) MUST be unique.
+#  - `local_path` MUST start with `/` or `$HOME`.
+#  - `mathlint_pin` MUST match `^[A-Za-z0-9._/-]+$` (git ref shape).
+#  - `check_program_script` MUST be a relative path ending in `.sh`.
