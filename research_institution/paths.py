@@ -76,20 +76,36 @@ def default_environment() -> Environment:
 def institution_dir(env: Optional[Environment] = None) -> Path:
     """Return the research-institution repo root, or raise if unset.
 
-    Set by the bootstrap installer in `~/.zshrc`. Tests inject the
-    env directly via the `env` argument.
+    Resolution order:
+
+    1. The ``MATHLINT_INSTITUTION_DIR`` env var (set by the operator's
+       dotfiles; the canonical override).
+    2. The current working directory or any ancestor that contains
+       ``catalog/programs.toml`` (covers the common case where the
+       operator `cd`s into the repo and runs the dispatcher directly
+       from there, e.g. in a fresh test or recovery scenario).
+
+    Raises RuntimeError when neither path resolves, with an actionable
+    fix that names the env var and the canonical repo path.
     """
     e = env or _OsEnviron()
     raw = e.get("MATHLINT_INSTITUTION_DIR")
-    if not raw:
-        raise RuntimeError(
-            "MATHLINT_INSTITUTION_DIR is not set; source the operator's ~/.zshrc "
-            "or export it manually: export MATHLINT_INSTITUTION_DIR=/path/to/research-institution"
-        )
-    p = Path(raw)
-    if not p.is_dir():
-        raise RuntimeError(f"MATHLINT_INSTITUTION_DIR points at non-directory: {p}")
-    return p
+    if raw:
+        p = Path(raw)
+        if not p.is_dir():
+            raise RuntimeError(f"MATHLINT_INSTITUTION_DIR points at non-directory: {p}")
+        return p
+    # Fallback: walk up from cwd looking for the catalog marker.
+    import os as _os
+    cwd = Path(_os.getcwd())
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / "catalog" / "programs.toml").is_file():
+            return candidate
+    raise RuntimeError(
+        "MATHLINT_INSTITUTION_DIR is not set AND no ancestor of cwd contains "
+        "catalog/programs.toml. Either `cd` into the research-institution repo "
+        "first, or export MATHLINT_INSTITUTION_DIR=/path/to/research-institution"
+    )
 
 
 def mathlint_vault(env: Optional[Environment] = None) -> Path:
