@@ -59,10 +59,19 @@ A fresh agent session receiving the cold prompt
 1. Read this `AGENTS.md` (the prime directive).
 2. Read `README.md` (the repo's role in the institution).
 3. Read `catalog/programs.toml` (the in-flight programs).
-4. Run `bash green-gate/check-institution.sh --hermetic`
-   to confirm the institution is wired on this machine.
-5. Decide what work to do next based on the durable
-   semantic records under `docs/semantic/`.
+4. Run `bash scripts/verify-institution.sh` to confirm
+   the institution is wired on this machine. (The
+   `green-gate/check-institution.sh` shim still works for
+   backward compat; `scripts/verify-institution.sh` is
+   preferred — it sets `RESEARCH_INSTITUTION_VWIRE_DIRECT=1`
+   so the operator gets a clean answer when math-engine has
+   unrelated drift in pyramid-inversion. See
+   `docs/operations/launch-kaplansky-autonomously.md` for
+   the full operator recipe.)
+5. If the gate is GREEN, decide what work to do next based
+   on the durable semantic records under `docs/semantic/`.
+   If RED, the gate output names the failing stage; the doc
+   above lists each common failure mode and its fix.
 
 ## Cross-references
 
@@ -70,6 +79,9 @@ A fresh agent session receiving the cold prompt
   prime directive (the canonical reference).
 - `~/Documents/andrei/math/docs/semantic/` — math-engine's
   durable semantic records.
+- `docs/operations/launch-kaplansky-autonomously.md` —
+  the operator's one-pager (single canonical recipe).
 - `docs/operations/research-institution-quickstart.md` —
-  the operator's one-pager.
+  historical operator quickstart (still valid; launches the
+  same path with different entry points).
 - `catalog/programs.toml` — declarative program registry.

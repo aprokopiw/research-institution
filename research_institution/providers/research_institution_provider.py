@@ -42,10 +42,9 @@ import dataclasses
 import importlib
 import importlib.metadata
 import logging
-import os
 import time
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 
 from mathlint.program_providers import (
     ProgramProviders,
@@ -79,25 +78,6 @@ _DEFAULT_PROGRAM_ENTRY_POINTS: tuple[str, ...] = (
 # Vocabulary pinned by @CTR-0094. Using a closed Literal-style set so
 # the runtime values are grep-able in the mathlint consumer code.
 _DISPATCH_KINDS = frozenset({"Dispatch", "Wait", "OperatorRequired", "Stop"})
-
-
-def _read_repository() -> Path:
-    """Return the supervised program's repository, or raise.
-
-    Resolution order matches mathlint's ``real_source.configured_provider``
-    so the same env-var contract is honored on both sides of the
-    kernel/OS boundary.
-    """
-    raw = os.environ.get("TARGET_REPOSITORY") or os.environ.get(
-        "KAPLANSKY_REPOSITORY", ""
-    )
-    if not raw:
-        msg = (
-            "research-institution provider: target repository is not configured. "
-            "Set TARGET_REPOSITORY (preferred) or KAPLANSKY_REPOSITORY."
-        )
-        raise RuntimeError(msg)
-    return Path(raw)
 
 
 def _read_revision(repo: Path) -> tuple[str, float]:
