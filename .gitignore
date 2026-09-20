@@ -23,6 +23,9 @@ dist/
 # Plan artifacts (transient; never tracked)
 .agents/transient/
 .pi-glla/
+# Per-session handoff (continues across chat resets within one bring-up,
+# but rots across plans / operator handoffs). Keep on disk, never commit.
+context_handoff.md
 
 # OS
 .DS_Store

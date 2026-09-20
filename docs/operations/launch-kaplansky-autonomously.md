@@ -1,5 +1,83 @@
 # Launch Kaplansky Autonomously — Operator One-Pager
 
+## Model routing
+
+The math-research worker is `openai-codex/gpt-5.6-sol` (the
+only model in the field strong enough for the strict-invariant
+discipline the math kernel enforces). The judge and all
+non-math interactive sessions stay on the global default
+`MiniMax-M3` — judge work is ops/monitoring
+(wedge classification, transport health, compaction state),
+not math.
+
+Routing table:
+
+| Role       | Model                              | Reason                                             |
+| ---------- | ---------------------------------- | -------------------------------------------------- |
+| worker     | `openai-codex/gpt-5.6-sol`         | Math research / proof / validation / architecture  |
+| judge      | global default (`MiniMax-M3`)      | Ops/monitoring (wedge, transport, compaction)      |
+| interactive chat | global default (`MiniMax-M3`) | Non-math work, orchestration, repo maintenance     |
+
+The supervisor reads `[worker].model` from `/tmp/super.toml`
+(or whatever `--config` points to). OAuth is satisfied at
+`~/.pi/agent/auth.json` — no API key needed for
+`openai-codex`.
+
+**Naming convention.** The `[project].name` in `/tmp/super.toml`
+is the state-dir slug under `~/.local/state/pi-monitor/`.
+Use `name = "kaplansky"` (not `kaplansky-launch-test`) once
+real autonomous research has begun — `*-launch-test` is
+reserved for smoke-testing the dispatch boundary end-to-end
+before model routing and durable record fields are
+provisioned.
+
+## Rate caps
+
+The supervisor enforces rolling-window rate-of-burn caps on
+top of the cumulative `[budgets]` block. Rate caps answer "is
+the worker spending too fast right now?"; cumulative budgets
+answer "have we spent enough overall?". A 1m cap catches a
+runaway single turn; a 24h cap bounds an overnight run.
+
+Operator-facing knobs live in `[rate_limits]` of the canonical
+config (`~/.config/mathlint/local-pi-monitor.toml`):
+
+| Key                          | Purpose                                  | Plus-plan ballpark |
+| ---------------------------- | ---------------------------------------- | ------------------ |
+| `max_tokens_per_1m`          | single-turn runaway                      | `500_000`          |
+| `max_tokens_per_10m`         | stuck-in-a-loop detection                | `3_000_000`        |
+| `max_tokens_per_1h`          | session-level drift                      | unset              |
+| `max_tokens_per_24h`         | overnight run budget                     | `4_000_000`        |
+| `max_dollars_per_*`          | parallel cost caps (same windows)        | unset              |
+
+Plus-plan ballpark derivation: 4M tokens / 5h sustained = ~13K
+tokens/min sustained. A 1m cap at 500K leaves 38× headroom for
+spiky think steps; 24h at 4M = ~16% of the weekly budget.
+
+When any window trips, the supervisor emits
+`rate_limit_denied` followed by `operator_required` audit
+events and stops the run. The worker's next dispatch is
+denied with the trip list surfaced in the audit so the
+operator knows which cap fired.
+
+Observability surface (read these to confirm the cap fired
+correctly):
+
+* `pi-monitor status --latest` -> `repo.math_artifacts.session`
+  shows whether research is actually happening (separate from
+  cap state).
+* `pi-monitor journal -f` -> tail the audit log; search for
+  `rate_limit_denied` to find the trip event.
+* `~/.local/state/pi-monitor/.../rate_limits/observations.jsonl`
+  -> raw ledger. Each line carries a `fp` (config fingerprint)
+  tag so a cap raise can be replayed cleanly.
+
+A cap raise in mid-run is safe: the supervisor tags every
+observation with the active config fingerprint and drops
+observations tagged with the previous fingerprint the moment
+the cap changes. The worker resumes as soon as the new cap
+is loaded.
+
 **Goal of this doc:** a fresh operator on a fresh machine can
 get `pi-monitor` running the Kaplansky research program end-to-end
 in three commands. Each command is reproducible; the verdict is
