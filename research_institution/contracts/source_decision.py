@@ -43,7 +43,7 @@ typed envelopes through the wire boundary.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
@@ -244,6 +244,11 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
     The reverse of :func:`parse_source_decision`. Both helpers stay
     colocated with the type so the round-trip is auditable in one
     place. Constitution Principle VII.
+
+    Uses ``isinstance`` (which pyright narrows) instead of
+    ``kind is DecisionKind.X`` + cast — eliminates the dishonest
+    ``cast("Dispatch", decision)`` calls where pyright can't see
+    through the discriminator branch.
     """
     rev = decision.source_revision
     rev_model = SourceRevisionWireDict(
@@ -251,47 +256,43 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
         observed_unix=rev.observed_unix,
         label=rev.label,
     )
-    kind = decision_kind(decision)
-    if kind is DecisionKind.DISPATCH:
-        dispatch = cast("Dispatch", decision)
+    if isinstance(decision, Dispatch):
         return SourceDecisionWireDict(
-            kind=kind.value,
+            kind=DecisionKind.DISPATCH.value,
             source_revision=rev_model,
-            decided_unix=dispatch.decided_unix,
-            reason_code=cast("ReasonCodeLiteral", dispatch.reason_code),
-            reason=dispatch.reason,
-            work=[_work_request_to_wire(w) for w in dispatch.work],
+            decided_unix=decision.decided_unix,
+            reason_code=decision.reason_code,
+            reason=decision.reason,
+            work=[_work_request_to_wire(w) for w in decision.work],
         )
-    if kind is DecisionKind.WAIT:
-        wait = cast("Wait", decision)
+    if isinstance(decision, Wait):
         return SourceDecisionWireDict(
-            kind=kind.value,
+            kind=DecisionKind.WAIT.value,
             source_revision=rev_model,
-            decided_unix=wait.decided_unix,
-            reason_code=cast("ReasonCodeLiteral", wait.reason_code),
-            reason=wait.reason,
-            wake_on_source_change=wait.wake_on_source_change,
-            retry_after_seconds=wait.retry_after_seconds,
-            until_unix=wait.until_unix,
-            payload=dict(wait.payload) if wait.payload else None,
+            decided_unix=decision.decided_unix,
+            reason_code=decision.reason_code,
+            reason=decision.reason,
+            wake_on_source_change=decision.wake_on_source_change,
+            retry_after_seconds=decision.retry_after_seconds,
+            until_unix=decision.until_unix,
+            payload=dict(decision.payload) if decision.payload else None,
         )
-    if kind is DecisionKind.OPERATOR_REQUIRED:
-        op = cast("OperatorRequired", decision)
+    if isinstance(decision, OperatorRequired):
         return SourceDecisionWireDict(
-            kind=kind.value,
+            kind=DecisionKind.OPERATOR_REQUIRED.value,
             source_revision=rev_model,
-            decided_unix=op.decided_unix,
-            reason_code=cast("ReasonCodeLiteral", op.reason_code),
-            reason=op.reason,
+            decided_unix=decision.decided_unix,
+            reason_code=decision.reason_code,
+            reason=decision.reason,
         )
-    # DecisionKind.STOP — narrowing by elimination.
-    stop = cast("Stop", decision)
+    # Exhaustiveness: at this point the union has narrowed to Stop.
+    assert isinstance(decision, Stop)
     return SourceDecisionWireDict(
-        kind=kind.value,
+        kind=DecisionKind.STOP.value,
         source_revision=rev_model,
-        decided_unix=stop.decided_unix,
-        reason_code=cast("ReasonCodeLiteral", stop.reason_code),
-        reason=stop.reason,
+        decided_unix=decision.decided_unix,
+        reason_code=decision.reason_code,
+        reason=decision.reason,
     )
 
 

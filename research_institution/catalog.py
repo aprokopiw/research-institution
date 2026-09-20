@@ -106,12 +106,14 @@ def load_catalog(path: Path) -> list[Program]:
     raw_entries = data.get("programs")
     if not isinstance(raw_entries, list) or not raw_entries:
         raise ValueError(f"catalog at {path} must contain a non-empty [[programs]] table")
-    # tomllib returns list[dict[str, Any]]; we re-type as
-    # list[dict[str, object]] because that's what the legacy
-    # ``_parse_one`` signature accepts (and matches the wire-model
-    # contract — ``ProgramTomlEntry.model_validate`` does the real
-    # shape check inside ``_parse_one``).
-    typed_entries: list[dict[str, object]] = list(raw_entries)  # type: ignore[assignment]
+    # tomllib returns list[dict[str, Any]]; narrow to
+    # list[dict[str, object]] via a per-item comprehension so each
+    # entry is structurally a dict (drops non-dict items defensively;
+    # Pydantic's ``model_validate`` inside ``_parse_one`` does the
+    # full shape check).
+    typed_entries: list[dict[str, object]] = [
+        dict(item) for item in raw_entries if isinstance(item, dict)
+    ]
 
     programs: list[Program] = []
     seen_names: set[str] = set()

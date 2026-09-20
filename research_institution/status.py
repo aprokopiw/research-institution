@@ -23,7 +23,12 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal
+
+from .status_types import (
+    HealthPayload as _HealthPayload,
+    LatestPayload as _LatestPayload,
+)
 
 
 class ProgramState(StrEnum):
@@ -54,44 +59,16 @@ ProgramStateLiteral = Literal[
 
 
 # ---------------------------------------------------------------------------
-# Supervisor state payload shape (TypedDict)
+# Supervisor state payload shape
 #
 # Both ``health.json`` and ``latest.json`` are produced by pi_monitor and
-# read by this module. They share a common ``execution`` sub-record;
-# ``health.json`` adds ``circuit`` + ``degraded`` + ``supervisor_pid``.
-# These TypedDicts replace the previous ``dict[str, Any]`` parameters.
+# read by this module. The wire shapes are owned by Pydantic models in
+# :mod:`research_institution.status_types`; this module re-exports them
+# under the canonical names (``HealthPayload`` / ``LatestPayload``)
+# for backward-compat with the previous TypedDict-based surface.
 # ---------------------------------------------------------------------------
-
-
-class ExecutionPayload(TypedDict, total=False):
-    """Subset of the supervisor execution record shared by both files."""
-
-    outcome: str
-    attempt_ordinal: int
-    outcome_unix: float
-    active_key: str
-
-
-class HealthPayload(TypedDict, total=False):
-    """Wire shape of ``health.json`` as written by pi_monitor.
-
-    All fields are optional because the supervisor emits incrementally.
-    ``supervisor_pid`` may be ``None`` when the test fixture wants to
-    skip the liveness probe without setting a real PID.
-    """
-
-    supervisor_pid: int | None
-    audit: dict[str, object]
-    circuit: dict[str, object]
-    degraded: list[object]
-    execution: ExecutionPayload
-
-
-class LatestPayload(TypedDict, total=False):
-    """Wire shape of ``latest.json`` as written by pi_monitor."""
-
-    observed_unix: float
-    execution: ExecutionPayload
+HealthPayload = _HealthPayload
+LatestPayload = _LatestPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,25 +89,34 @@ class StatusHeadline:
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
-    """Read one JSON file; return None on missing/malformed."""
+    """Read one JSON file; return None on missing/malformed.
+
+    The raw dict is the typed parse boundary: it lives only
+    inside :func:`_parse_health` / :func:`_parse_latest` and is
+    immediately consumed by ``HealthPayload.model_validate`` /
+    ``LatestPayload.model_validate``. Callers never see a
+    ``dict[str, object]``; the typed model is the contract.
+    """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
 
 
-def _truthy_int(value: object) -> int:
-    """Coerce an arbitrary JSON value to a non-negative int, defaulting to 0.
+def _parse_health(raw: dict[str, Any]) -> HealthPayload:
+    """Parse the raw ``health.json`` dict into the typed wire model.
 
-    The supervisor's wire payloads treat missing keys as 0. Anything
-    that isn't a JSON number is reported as 0 rather than raising —
-    the classifier is robust-by-default to wire drift.
+    A malformed field (wrong type, missing required field) raises
+    ``ValidationError``; the caller treats that as wire drift and
+    surfaces the failure. ``extra=\"allow\"`` on the wire model
+    means forward-compat fields pass through silently.
     """
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    return 0
+    return HealthPayload.model_validate(raw)
+
+
+def _parse_latest(raw: dict[str, Any]) -> LatestPayload:
+    """Parse the raw ``latest.json`` dict into the typed wire model."""
+    return LatestPayload.model_validate(raw)
 
 
 def _classify(
@@ -144,37 +130,43 @@ def _classify(
     `now` is the wall-clock anchor for the staleness check
     (`observed_unix + 300s`). Defaults to `time.time()`; tests
     inject a frozen `now` to keep assertions deterministic.
+
+    Reads fields via Pydantic model attributes (typed view);
+    the wire parse happens in :func:`_parse_health` /
+    :func:`_parse_latest` so the classifier body itself never
+    touches ``dict.get(...)`` / ``dict[...]`` (no runtime shape
+    probes; pyright sees the typed shape through the body).
     """
     import os as _os
 
     if health is None and latest is None:
         return ProgramState.NO_SUPERVISOR
-    health = health or {}
-    latest = latest or {}
     # If the state files claim a supervisor_pid but it doesn't
     # respond to os.kill(pid, 0), the supervisor is actually dead
     # (stale state file). Surface this BEFORE the other classifiers
     # so the operator doesn't chase ghost "degraded" issues.
-    pid_raw = health.get("supervisor_pid")
-    pid: int = pid_raw if isinstance(pid_raw, int) else 0
-    if pid > 0:
+    pid = health.supervisor_pid if health is not None else None
+    if isinstance(pid, int) and pid > 0:
         try:
             _os.kill(pid, 0)
         except (ProcessLookupError, PermissionError, OSError):
             return ProgramState.STOPPED
-    circuit: dict[str, object] = health.get("circuit") or {}
-    if circuit.get("open") or _truthy_int(circuit.get("trip_count", 0)) > 0:
-        return ProgramState.CIRCUIT_OPEN
-    degraded: list[object] = list(health.get("degraded") or [])
-    if degraded:
-        return ProgramState.DEGRADED
-    execution = health.get("execution", {})
-    if execution.get("outcome") == "blocked":
-        return ProgramState.GATE_CLOSED
-    observed_unix = latest.get("observed_unix") or health.get("execution", {}).get("outcome_unix")
-    if observed_unix is None:
+    if health is not None:
+        circuit = health.circuit
+        if circuit.open or circuit.trip_count > 0:
+            return ProgramState.CIRCUIT_OPEN
+        if health.degraded:
+            return ProgramState.DEGRADED
+        if health.execution.outcome == "blocked":
+            return ProgramState.GATE_CLOSED
+    observed_unix: float | None = None
+    if latest is not None:
+        observed_unix = latest.observed_unix or None
+    if observed_unix is None and health is not None:
+        observed_unix = health.execution.outcome_unix or None
+    if observed_unix is None or observed_unix == 0.0:
         return ProgramState.NO_SUPERVISOR
-    age = (now if now is not None else time.time()) - float(observed_unix)
+    age = (now if now is not None else time.time()) - observed_unix
     if age > 300:  # 5 minutes
         return ProgramState.STOPPED
     return ProgramState.RUNNING
@@ -190,22 +182,18 @@ def _uptime_seconds(latest: LatestPayload | None, *, now: float | None = None) -
     `now` is the wall-clock anchor; defaults to `time.time()` so
     production callers stay zero-arg.
     """
-    if latest is None:
-        return 0.0
-    obs = latest.get("observed_unix")
-    if obs is None:
+    if latest is None or latest.observed_unix == 0.0:
         return 0.0
     anchor = now if now is not None else time.time()
-    return max(0.0, anchor - float(obs))
+    return max(0.0, anchor - latest.observed_unix)
 
 
 def _last_action(health: HealthPayload | None) -> str:
     """Return a short human-readable string for the last action."""
     if health is None:
         return ""
-    execution = health.get("execution", {})
-    outcome = execution.get("outcome") or ""
-    ordinal = execution.get("attempt_ordinal")
+    outcome = health.execution.outcome
+    ordinal = health.execution.attempt_ordinal
     if not outcome:
         return ""
     if ordinal:
@@ -237,8 +225,24 @@ def read_status_headline(
     # honest because the pi_monitor writer produces a structurally
     # compatible dict; any drift surfaces at runtime as KeyError/TypeError
     # in _classify, not as a silent type-system lie.
-    health = cast("HealthPayload | None", _read_json(state_dir / "health.json"))
-    latest = cast("LatestPayload | None", _read_json(state_dir / "latest.json"))
+    health: HealthPayload | None = None
+    raw_health = _read_json(state_dir / "health.json")
+    if raw_health is not None:
+        try:
+            health = _parse_health(raw_health)
+        except Exception:
+            # Wire drift: malformed field, wrong type, etc. The
+            # classifier must remain robust-by-default (a missing
+            # or malformed ``health.json`` is "no-supervisor",
+            # not "raise"); drop the document.
+            health = None
+    latest: LatestPayload | None = None
+    raw_latest = _read_json(state_dir / "latest.json")
+    if raw_latest is not None:
+        try:
+            latest = _parse_latest(raw_latest)
+        except Exception:
+            latest = None
     return StatusHeadline(
         program=program,
         state=_classify(health, latest, now=now),

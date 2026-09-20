@@ -38,25 +38,30 @@ NOW = 1_767_225_600.0
 
 def _write_json(path: Path, payload: HealthPayload | LatestPayload | dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Pydantic models serialize via model_dump; raw dicts serialize as-is.
+    if isinstance(payload, (HealthPayload, LatestPayload)):
+        payload = payload.model_dump(exclude_none=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _running_health(now: float) -> HealthPayload:
-    return {
-        "audit": {"chain_breaks": 0},
-        "circuit": {"open": False, "trip_count": 0, "soft_until_unix": 0.0},
-        "degraded": [],
-        "execution": {
-            "active_key": "kaplansky.x",
-            "attempt_ordinal": 3,
-            "outcome": "completed",
-            "outcome_unix": now,
-        },
-    }
+    return HealthPayload.model_validate(
+        {
+            "audit": {"chain_breaks": 0},
+            "circuit": {"open": False, "trip_count": 0, "soft_until_unix": 0.0},
+            "degraded": [],
+            "execution": {
+                "active_key": "kaplansky.x",
+                "attempt_ordinal": 3,
+                "outcome": "completed",
+                "outcome_unix": now,
+            },
+        }
+    )
 
 
 def _running_latest(now: float) -> LatestPayload:
-    return {"observed_unix": now}
+    return LatestPayload.model_validate({"observed_unix": now})
 
 
 def test_headline_running(tmp_path: Path) -> None:
@@ -146,8 +151,7 @@ def test_headline_stopped_after_5_minutes(tmp_path: Path) -> None:
     Boundary test: NOW - 300s = still running; NOW - 301s = stopped.
     Pins the exact staleness threshold against regression.
     """
-    health = _running_health(NOW)
-    health["supervisor_pid"] = None  # avoid PID-liveness early-out
+    health = _running_health(NOW).model_copy(update={"supervisor_pid": None})
     _write_json(tmp_path / "health.json", health)
     _write_json(tmp_path / "latest.json", _running_latest(NOW))
     # Exactly at the 5-minute boundary, still "running" (off-by-one oracle).
@@ -166,9 +170,12 @@ def test_headline_stopped_when_supervisor_pid_is_dead(tmp_path: Path) -> None:
     oracle: dropping the `os.kill(pid, 0)` check would let stale
     state hide a crashed supervisor.
     """
-    health = _running_health(NOW)
-    health["supervisor_pid"] = 2_000_000_000  # guaranteed-dead PID
-    health["degraded"] = ["source_unavailable"]  # would otherwise say "degraded"
+    health = _running_health(NOW).model_copy(
+        update={
+            "supervisor_pid": 2_000_000_000,  # guaranteed-dead PID
+            "degraded": ["source_unavailable"],  # would otherwise say "degraded"
+        }
+    )
     _write_json(tmp_path / "health.json", health)
     _write_json(tmp_path / "latest.json", _running_latest(NOW))
     h = read_status_headline("kaplansky", tmp_path, now=NOW)
