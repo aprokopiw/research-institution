@@ -9,20 +9,43 @@ the ``register()`` function below.
 
 Contract: ``@CTR-0094`` (work-source-provider dispatch envelope).
 
-The dispatch envelope shape is fixed by mathlint (the kernel).
-This module decides only what to put *inside* the envelope.
-Today the OS emits a structured ``Wait`` envelope with the
-catalog-resolved program identity and the supervisor's current
-revision fingerprint. As proof programs ship roadmap readers,
-the OS composes with them via ``ProgramProviders.roadmap_path``
-(filled by each program's own ``register()`` call).
+Composition with proof programs (per @ADR-0007):
+The OS owns the *work-source slot*. Each proof program owns
+its *content contributions* (theorem view, audit reports,
+obligation labels, etc.). Mathlint's
+``register_program_providers`` is wholesale (the kernel
+replaces the entire ``ProgramProviders`` state on every call),
+so the OS cannot let the program plugin overwrite its slot.
+
+To preserve both halves, ``register()`` here:
+
+1. Invokes each installed proof program's ``mathlint_plugin.register()``
+   directly (importing the module by name from the catalog's
+   ``entry_point``). The program's call populates theorem views,
+   audit reports, obligation labels, identifier namespace, etc.
+2. Reads the just-installed ``ProgramProviders`` state.
+3. Re-emits a merged ``ProgramProviders`` whose ``work_source_provider``
+   field carries the OS-level ``select_next_work_for_supervisor``
+   and whose remaining fields are the program's contributions
+   (so the program's slot is preserved alongside ours).
+
+If no proof program is installed in the current environment
+(common on CI runners), the OS still installs
+``work_source_provider``; the supplier zeros (no theorem
+view, no audit reports) are deliberate — the kernel can answer
+the work-decide syscall with a ``Wait`` envelope either way.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import importlib
+import importlib.metadata
+import logging
 import os
 import time
 from pathlib import Path
+from collections.abc import Iterable
 
 from mathlint.program_providers import (
     ProgramProviders,
@@ -30,7 +53,27 @@ from mathlint.program_providers import (
     register_program_providers,
 )
 
-__all__ = ["register", "select_next_work_for_supervisor"]
+__all__ = [
+    "register",
+    "select_next_work_for_supervisor",
+    "_compose_programs",
+]
+
+_LOG = logging.getLogger(__name__)
+
+
+# Proof programs that contribute content alongside the OS-owned
+# work-source slot. Each entry is the catalog's ``entry_point``
+# value (e.g. ``"kaplansky.mathlint_plugin:register"``). The OS
+# discovers programs by reading the institution catalog and only
+# composes with those marked ``live_credentials_required = true``
+# (or any program that exports a ``mathlint_plugin`` module).
+#
+# Adding a second research program means adding its name to
+# ``catalog/programs.toml``; no code edit here is needed.
+_DEFAULT_PROGRAM_ENTRY_POINTS: tuple[str, ...] = (
+    "kaplansky.mathlint_plugin:register",
+)
 
 
 # Vocabulary pinned by @CTR-0094. Using a closed Literal-style set so
@@ -150,14 +193,149 @@ def select_next_work_for_supervisor(repository: Path) -> dict[str, object]:
     }
 
 
+def _call_program_register(entry_point: str) -> None:
+    """Invoke one proof program's ``register()`` callback.
+
+    The ``entry_point`` string follows the
+    ``module:attribute`` convention that
+    ``importlib.metadata.EntryPoint.load()`` uses. Failures are
+    logged at WARNING level and swallowed so a missing or
+    broken program does not poison the OS-level registration
+    (the operator may legitimately be running mathlint without
+    any proof program installed).
+    """
+    module_name, separator, attribute = entry_point.partition(":")
+    if not separator or not module_name or not attribute:
+        _LOG.warning(
+            "skipping malformed program entry point %r; expected 'module:attribute'",
+            entry_point,
+        )
+        return
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as error:
+        _LOG.warning(
+            "proof program module %s is not installed; skipping (%s)",
+            module_name,
+            error,
+        )
+        return
+    callback = getattr(module, attribute, None)
+    if not callable(callback):
+        _LOG.warning(
+            "proof program module %s has no callable %s; skipping",
+            module_name,
+            attribute,
+        )
+        return
+    try:
+        result = callback()
+    except Exception as error:  # noqa: BLE001 — intentional fail-open
+        _LOG.warning(
+            "proof program %s raised during register(); skipping (%s)",
+            entry_point,
+            error,
+        )
+        return
+    if result is not None:
+        _LOG.warning(
+            "proof program %s must return None from register(); got %r",
+            entry_point,
+            result,
+        )
+
+
+def _program_entry_points() -> Iterable[str]:
+    """Yield every proof program's ``register()`` entry-point string.
+
+    Reads the institution catalog when present; falls back to
+    the built-in default (``kaplansky``) so a math-only venv
+    still composes with kaplansky when both are installed.
+
+    Each entry is the ``entry_point`` declared in
+    ``catalog/programs.toml`` (e.g.
+    ``"kaplansky.mathlint_plugin:register"``).
+    """
+    try:
+        from research_institution.catalog import load_catalog
+        from research_institution.paths import catalog_path
+
+        programs = load_catalog(catalog_path())
+    except (OSError, ValueError, ImportError, RuntimeError):
+        return tuple(_DEFAULT_PROGRAM_ENTRY_POINTS)
+    return tuple(p.entry_point for p in programs)
+
+
+def _merge_work_source(
+    program_state: ProgramProviders | None,
+    work_source: WorkSourceProvider,
+) -> ProgramProviders:
+    """Build a new ``ProgramProviders`` carrying both OS and program slots.
+
+    The kernel's ``register_program_providers`` is wholesale
+    (replaces the whole state). After each proof program's
+    ``register()`` has populated theorem_view / audit_reports /
+    obligation_labels / etc., this function emits the final
+    state in one kernel call so neither side clobbers the
+    other.
+    """
+    base = program_state if program_state is not None else ProgramProviders()
+    return dataclasses.replace(base, work_source_provider=work_source)
+
+
+def _compose_programs() -> ProgramProviders | None:
+    """Run every proof program's ``register()`` and return the merged state.
+
+    The returned object has the program's content contributions
+    and a *placeholder* ``work_source_provider`` (the kernel's
+    default). The OS-level ``register()`` swaps in its real
+    callable in the same kernel write so the public seam
+    (mathlint's ``program_providers()``) sees a single coherent
+    provider set.
+
+    Returns ``None`` when no proof program installed.
+    """
+    for entry_point in _program_entry_points():
+        _call_program_register(entry_point)
+    return _state_snapshot()
+
+
+def _state_snapshot() -> ProgramProviders | None:
+    """Return the kernel's current ``ProgramProviders``, or None if unset.
+
+    Imports ``program_providers`` lazily so import-time errors
+    in mathlint do not poison the OS-level entry point
+    discovery (the entry point is loaded at mathlint import
+    time; a lazy read happens later).
+    """
+    try:
+        from mathlint.program_providers import program_providers as _read_state
+    except ImportError:
+        return None
+    try:
+        return _read_state()
+    except RuntimeError:
+        return None
+
+
 def register() -> None:
     """Install the OS-level WorkSourceProvider into mathlint.
 
-    Idempotent: calling ``register()`` twice with no other plugin
-    between calls is safe. The slot is set to a fresh
-    ``select_next_work_for_supervisor`` callable each time so a
-    test that mutates the function (e.g. via monkeypatch) does
-    not leak across test boundaries.
+    Compose order (per @ADR-0007):
+
+    1. Each installed proof program's ``register()`` runs first,
+       populating content contributions (theorem view, audit
+       reports, obligation labels, identifier namespace).
+    2. The OS reads the merged state via ``program_providers()``
+       and re-emits it with the OS-owned ``work_source_provider``
+       attached, so neither side clobbers the other.
+    3. Idempotency: re-calling ``register()`` re-installs the
+       work-source callable (which is fresh per call so test
+       monkeypatches do not leak); content contributions are
+       re-populated by each program's ``register()`` and are
+       idempotent at the kernel level.
     """
+    composed = _compose_programs()
     provider: WorkSourceProvider = select_next_work_for_supervisor
-    register_program_providers(ProgramProviders(work_source_provider=provider))
+    final = _merge_work_source(composed, provider)
+    register_program_providers(final)

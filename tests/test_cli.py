@@ -516,21 +516,32 @@ def test_green_gate_advertises_v_wire_subcheck(repo_root: Path) -> None:
     cross-repo composition contracts. Dashboards that grep for the
     ``v-wire`` label would miss the change. This test pins the label
     AND the env-var contract so the public surface is preserved.
+
+    Post-refactor: the canonical implementation lives in
+    `research_institution.gates.aggregate`; the shell shim at
+    `green-gate/check-institution.sh` is a 4-line delegator that
+    exec's the module. We assert the public-surface contract on
+    the module + the env-var forward on the shim.
     """
+    # The V-WIRE label must come from the Python aggregator.
+    import research_institution.gates.aggregate as aggregate_module
+
+    module_path = Path(aggregate_module.__file__).read_text(encoding="utf-8")
+    assert '"v-wire"' in module_path or "'v-wire'" in module_path or "\"v-wire\"" in module_path or "[v-wire]" in module_path, (
+        "green-gate aggregator no longer advertises V-WIRE; check the "
+        "Python module's _v_wire_check() function."
+    )
+    # The env-var forward is honored by the aggregator; the shim
+    # forwards the entire os.environ so we just need to confirm the
+    # name appears in the aggregator source.
+    assert "RESEARCH_INSTITUTION_VWIRE_DIRECT" in module_path, (
+        "aggregator no longer honors RESEARCH_INSTITUTION_VWIRE_DIRECT; "
+        "the hermetic CI runner escape hatch is missing."
+    )
+    # And the shim exists + is executable (operator muscle memory).
     gate = repo_root / "green-gate" / "check-institution.sh"
-    if not gate.is_file():
-        pytest.skip("green-gate script not present in this checkout")
-    source = gate.read_text(encoding="utf-8")
-    assert "[v-wire]" in source, (
-        "green-gate no longer advertises the V-WIRE sub-check "
-        "(missing '[v-wire]' label). The cross-repo wiring tier "
-        "has been removed or renamed. If intentional, update this "
-        "test AND the operator dashboards that grep for the label."
-    )
-    assert "RESEARCH_INSTITUTION_VWIRE_DIRECT" in source, (
-        "green-gate no longer honors RESEARCH_INSTITUTION_VWIRE_DIRECT. "
-        "The escape hatch for hermetic CI runners is missing."
-    )
+    assert gate.is_file(), "green-gate shim missing"
+    assert gate.stat().st_mode & 0o111, "green-gate shim not executable"
 
 
 def test_doctor_preserves_v_wire_env_var_through_to_gate(
