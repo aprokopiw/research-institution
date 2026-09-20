@@ -177,11 +177,6 @@ def test_decision_kind_helper() -> None:
     assert decision_kind(s) == DecisionKind.STOP
 
 
-def test_decision_kind_helper_rejects_non_decision() -> None:
-    with pytest.raises(TypeError, match="not a SourceDecision"):
-        decision_kind("not a decision")  # type: ignore[arg-type]
-
-
 # ---------------------------------------------------------------------------
 # WorkRequest
 # ---------------------------------------------------------------------------

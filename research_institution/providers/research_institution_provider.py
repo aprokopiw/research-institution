@@ -50,7 +50,15 @@ from mathlint.program_providers import (
     WorkSourceProvider,
     register_program_providers,
 )
-from pi_monitor.work_source import SourceRevision, Wait
+
+# Single typed-envelope surface. The contracts module re-exports
+# pi_monitor's dataclasses by identity (no mirror) so isinstance
+# and dataclass equality hold across the institution boundary.
+from research_institution.contracts.source_decision import (
+    REASON_WAIT_REQUESTED,
+    SourceRevision,
+    Wait,
+)
 
 __all__ = [
     "register",
@@ -150,7 +158,7 @@ def select_next_work_for_supervisor(repository: Path) -> Wait:
     and converting the next item into a ``Dispatch`` envelope.
 
     The return type is the typed dispatch envelope's ``Wait``
-    dataclass (see ``research_institution.dispatch_protocol``).
+    dataclass (see ``research_institution.contracts.source_decision``).
     Pyright enforces the required field set and forbids any
     hand-rolled dict construction at the dispatch boundary. The
     envelope's runtime serialisation is the supervisor's
@@ -172,7 +180,7 @@ def select_next_work_for_supervisor(repository: Path) -> Wait:
     return Wait(
         source_revision=source_revision,
         decided_unix=observed,
-        reason_code="wait_requested",
+        reason_code=REASON_WAIT_REQUESTED,
         reason=(
             "research-institution provider: no roadmap reader yet; "
             "the proof program must supply one via ProgramProviders. "

@@ -22,6 +22,14 @@ authors = [
 dependencies = [
   "typer>=0.12",
   "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@main",
+  # pi-monitor is a runtime dep: the institution's typed-envelope
+  # surface (``research_institution.contracts.source_decision``)
+  # re-exports ``pi_monitor.work_source.{Dispatch, Wait,
+  # OperatorRequired, Stop, WorkRequest, SourceRevision}`` directly,
+  # so isinstance checks and dataclass identity hold across the
+  # boundary. ADR-0007 + Constitution Principle III make pi-monitor
+  # a peer; if it isn't installed, the typed envelope cannot exist.
+  "pi-monitor @ git+https://github.com/aprokopiw/pi_monitor.git@v0.2.0",
 ]
 
 # mathlint.providers entry point. Per @ADR-0007, research-institution
@@ -40,6 +48,7 @@ research_institution = "research_institution.providers.research_institution_prov
 # judgment, governed by `@CTR-0088`.
 [dependency-groups]
 dev = [
+  "hypothesis>=6.100",
   "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@v0.1.0",
   "kaplansky-research-program @ git+https://github.com/aprokopiw/math-kaplansky.git@v0.1.0",
   "pi-monitor @ git+https://github.com/aprokopiw/pi_monitor.git@v0.2.0",
