@@ -93,8 +93,9 @@ def test_probe_supervisor_alive_pid(tmp_path: Path) -> None:
     """When the JSON includes the current PID, is_alive is True."""
     runner = FakeRunner()
     payload = (
-        '{"supervisor_pid": ' + str(os.getpid()) +
-        ', "worker_pid": 0, "project": "x", "root": "/tmp", "state_dir": "/tmp/x"}'
+        '{"supervisor_pid": '
+        + str(os.getpid())
+        + ', "worker_pid": 0, "project": "x", "root": "/tmp", "state_dir": "/tmp/x"}'
     )
     runner.responses = [
         subprocess.CompletedProcess(["pi-monitor"], 0, stdout=payload, stderr=""),

@@ -88,12 +88,26 @@ run_check() {
     rm -f /tmp/.check_$$
 }
 
+# 0. V0 — structural validity (ruff). This repo's V0 gate, enforced
+# at the institution level. Optional: if `ruff` is not on PATH, this
+# step is skipped (CI runs ruff via .github/workflows/ci.yml).
+# Skip when `RESEARCH_INSTITUTION_HERMETIC=1` (test mode): isolated
+# test environments don't carry the source tree we lint.
+if [ "${RESEARCH_INSTITUTION_HERMETIC:-0}" = "1" ]; then
+    printf '[v0-ruff] hermetic mode (skipped)\n'
+elif command -v ruff >/dev/null 2>&1; then
+    run_check "v0-ruff" sh -c "cd '$ROOT' && ruff check research_institution tests"
+else
+    printf '[v0-ruff] not on PATH (skipped; CI enforces this gate)\n'
+fi
+
 # 1. Engine (mathlint) — always runs.
 ENGINE_FLAGS="--skip-external --use-program=self_test-sample"
 if [ "$MODE" = "live" ]; then
     ENGINE_FLAGS=""
 fi
-ENGINE_SCRIPT="$(expand '$HOME')/Documents/andrei/math/scripts/check-local-system-readiness.sh"
+# Allow hermetic tests to override the engine script location via env var.
+ENGINE_SCRIPT="${RESEARCH_INSTITUTION_ENGINE_SCRIPT:-$(expand '$HOME')/Documents/andrei/math/scripts/check-local-system-readiness.sh}"
 if [ -f "$ENGINE_SCRIPT" ]; then
     run_check "engine" sh -c "cd '$ROOT' && bash '$ENGINE_SCRIPT' $ENGINE_FLAGS"
 else

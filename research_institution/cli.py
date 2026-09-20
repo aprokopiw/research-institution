@@ -14,6 +14,7 @@ not require a cross-repo mathlint change.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -21,7 +22,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -132,9 +132,7 @@ class GateVerdict:
         # Catches typos at construction time, not at the call site.
         valid = {s.value for s in GateVerdictStatus}
         if self.status not in valid:
-            raise ValueError(
-                f"GateVerdict.status must be one of {valid}; got {self.status!r}"
-            )
+            raise ValueError(f"GateVerdict.status must be one of {valid}; got {self.status!r}")
 
     @property
     def gate_open(self) -> bool:
@@ -142,7 +140,7 @@ class GateVerdict:
         return self.status == GateVerdictStatus.OPEN
 
     @classmethod
-    def from_text(cls, text: str) -> "GateVerdict":
+    def from_text(cls, text: str) -> GateVerdict:
         """Parse a `mathlint roadmap` output string into a verdict.
 
         Pure function (no subprocess, no I/O). Use this in tests with
@@ -170,7 +168,9 @@ class GateVerdict:
         )
 
 
-def check_gate(prog: Program, mathlint_bin: str = "mathlint", cwd: Optional[Path] = None) -> GateVerdict:
+def check_gate(
+    prog: Program, mathlint_bin: str = "mathlint", cwd: Path | None = None
+) -> GateVerdict:
     """Read `mathlint roadmap` and return the architecture-review gate verdict.
 
     Runs `mathlint roadmap` in the program's resolved_local_path.
@@ -223,7 +223,9 @@ def list_cmd() -> None:
 
 @app.command("doctor")
 def doctor(
-    live: bool = typer.Option(False, "--live", help="Run the operator-live gate (requires credentials)."),
+    live: bool = typer.Option(
+        False, "--live", help="Run the operator-live gate (requires credentials)."
+    ),
     program: str | None = typer.Option(None, "--program", help="Scope the gate to one program."),
 ) -> None:
     """Run the canonical institution green gate. Delegates to green-gate/check-institution.sh."""
@@ -241,7 +243,9 @@ def doctor(
 @app.command("start")
 def start(
     program: str = typer.Argument(..., help="Program name from the catalog."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would launch; skip gate check + credentials."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would launch; skip gate check + credentials."
+    ),
     skip_gate: bool = typer.Option(
         False,
         "--skip-gate",
@@ -291,14 +295,18 @@ def start(
         raise typer.Exit(code=3)
 
     if dry_run:
-        typer.echo(f"would launch: {prog.name} (mode={mode}, local_path={prog.resolved_local_path})")
+        typer.echo(
+            f"would launch: {prog.name} (mode={mode}, local_path={prog.resolved_local_path})"
+        )
         if mode == "autonomous":
             cfg = pi_monitor_config_path()
             typer.echo(f"would delegate to: pi-monitor run --config {cfg}")
             typer.echo("(no mathlint preflight; this is the autonomous-supervision path)")
         else:
             typer.echo("would delegate to: mathlint live-run --confirm-live")
-            typer.echo(f"would require credentials: {[v for v in prog.live_credential_env_vars] or '(none)'}")
+            typer.echo(
+                f"would require credentials: {[v for v in prog.live_credential_env_vars] or '(none)'}"
+            )
         typer.echo("would check architecture-review gate: yes (read-only roadmap parse)")
         # For --dry-run, also surface whether a supervisor is already
         # up so the operator sees the full picture without spawning.
@@ -340,7 +348,9 @@ def start(
             )
             if verdict.reason:
                 typer.echo(f"  reason: {verdict.reason}", err=True)
-            typer.echo("  fix: run `mathlint architect-apply --recommendation <yaml>` and retry.", err=True)
+            typer.echo(
+                "  fix: run `mathlint architect-apply --recommendation <yaml>` and retry.", err=True
+            )
             typer.echo("  override: pass --skip-gate to launch anyway (logged).", err=True)
             raise typer.Exit(code=EXIT_GATE_CLOSED)
         typer.echo(f"gate OK (TASK KIND={verdict.task_kind})", err=True)
@@ -369,7 +379,9 @@ def start(
     typer.echo(f"spawning pi-monitor run --config {cfg}", err=True)
     # Re-check immediately before spawn to close the small race window.
     if probe_default_supervisor().is_alive:
-        typer.echo("(a supervisor started between the initial check and the spawn; reusing it)", err=True)
+        typer.echo(
+            "(a supervisor started between the initial check and the spawn; reusing it)", err=True
+        )
         raise typer.Exit(code=0)
     rc = subprocess.call([pi_monitor, "run", "--config", str(cfg)])
     raise typer.Exit(code=rc)
@@ -404,11 +416,12 @@ def stop(
     typer.echo(f"stopping supervisor (pid {pid}) via SIGTERM", err=True)
     try:
         os.kill(pid, 15)  # SIGTERM
-    except ProcessLookupError:
+    except ProcessLookupError as err:
         typer.echo(f"  pid {pid} already exited", err=True)
-        raise typer.Exit(code=0)
+        raise typer.Exit(code=0) from err
     # Wait up to 5s for clean exit.
     import time as _time
+
     for _ in range(50):
         _time.sleep(0.1)
         if not _pid_alive_quick(pid):
@@ -416,10 +429,8 @@ def stop(
             raise typer.Exit(code=0)
     if force:
         typer.echo(f"  pid {pid} did not stop; sending SIGKILL", err=True)
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, 9)  # SIGKILL
-        except ProcessLookupError:
-            pass
         raise typer.Exit(code=0)
     typer.echo(f"  pid {pid} did not stop within 5s; retry with --force", err=True)
     raise typer.Exit(code=1)
@@ -516,27 +527,27 @@ def restart(
         # Inline stop with --force semantics.
         mathlint_bin = _which_or_die("mathlint")
         subprocess.call([mathlint_bin, "research-stop"])
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(state.supervisor_pid, 15)
-        except ProcessLookupError:
-            pass
         import time as _time
+
         for _ in range(50):
             _time.sleep(0.1)
             if not _pid_alive_quick(state.supervisor_pid):
                 break
         if _pid_alive_quick(state.supervisor_pid):
             typer.echo(f"  pid {state.supervisor_pid} did not stop; sending SIGKILL", err=True)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(state.supervisor_pid, 9)
-            except ProcessLookupError:
-                pass
         typer.echo("restart: stop done; starting", err=True)
     # Now call start with the same args. We invoke the function
     # directly (rather than shelling out) so the operator's shell
     # sees consistent stdout/stderr.
     start(
-        program=program, dry_run=False, skip_gate=skip_gate, mode=mode,
+        program=program,
+        dry_run=False,
+        skip_gate=skip_gate,
+        mode=mode,
     )
 
 
@@ -561,7 +572,18 @@ def watch(
     if not start_script.is_file():
         typer.echo(f"FATAL: pi_monitor start script missing at {start_script}", err=True)
         raise typer.Exit(code=3)
-    rc = subprocess.call([pi_monitor, "watch", "--config", str(config), "--script", str(start_script), "--interval", str(interval)])
+    rc = subprocess.call(
+        [
+            pi_monitor,
+            "watch",
+            "--config",
+            str(config),
+            "--script",
+            str(start_script),
+            "--interval",
+            str(interval),
+        ]
+    )
     raise typer.Exit(code=rc)
 
 

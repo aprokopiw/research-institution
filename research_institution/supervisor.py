@@ -28,7 +28,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from research_institution.paths import pi_monitor_config_path
 
@@ -48,7 +48,7 @@ class SupervisorState:
     supervisor_pid: int
     worker_pid: int
     is_alive: bool
-    status_payload: Optional[dict] = None
+    status_payload: dict | None = None
 
 
 def _pid_alive(pid: int) -> bool:
@@ -88,7 +88,10 @@ def probe_supervisor(
     try:
         completed = runner(
             ["pi-monitor", "status", "--config", str(config_path)],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return SupervisorState(

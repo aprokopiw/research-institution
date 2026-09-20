@@ -62,7 +62,9 @@ def test_bootstrap_tolerates_empty_catalog(tmp_path: Path, monkeypatch: pytest.M
     assert "INSTITUTION BOOTSTRAPPED" in result.stdout
 
 
-def test_bootstrap_reports_root_and_next_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bootstrap_reports_root_and_next_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Bootstrap's output tells the operator what to run next."""
     sandbox_root = tmp_path / "sandbox"
     sandbox_root.mkdir()

@@ -58,9 +58,20 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _classify(health: dict[str, Any] | None, latest: dict[str, Any] | None) -> str:
-    """Map the supervisor's state JSON to a canonical state string."""
+def _classify(
+    health: dict[str, Any] | None,
+    latest: dict[str, Any] | None,
+    *,
+    now: float | None = None,
+) -> str:
+    """Map the supervisor's state JSON to a canonical state string.
+
+    `now` is the wall-clock anchor for the staleness check
+    (`observed_unix + 300s`). Defaults to `time.time()`; tests
+    inject a frozen `now` to keep assertions deterministic.
+    """
     import os as _os
+
     if health is None and latest is None:
         return "no-supervisor"
     health = health or {}
@@ -87,25 +98,29 @@ def _classify(health: dict[str, Any] | None, latest: dict[str, Any] | None) -> s
     observed_unix = latest.get("observed_unix") or health.get("execution", {}).get("outcome_unix")
     if observed_unix is None:
         return "no-supervisor"
-    age = time.time() - float(observed_unix)
+    age = (now if now is not None else time.time()) - float(observed_unix)
     if age > 300:  # 5 minutes
         return "stopped"
     return "running"
 
 
-def _uptime_seconds(latest: dict[str, Any] | None) -> float:
+def _uptime_seconds(latest: dict[str, Any] | None, *, now: float | None = None) -> float:
     """Return seconds elapsed since the supervisor's first observation.
 
     Uses `latest.observed_unix` (sample timestamp) as a proxy. For
     true uptime we'd need a separate `started_at_unix` field;
     until then, sample timestamp is the best signal we have.
+
+    `now` is the wall-clock anchor; defaults to `time.time()` so
+    production callers stay zero-arg.
     """
     if latest is None:
         return 0.0
     obs = latest.get("observed_unix")
     if obs is None:
         return 0.0
-    return max(0.0, time.time() - float(obs))
+    anchor = now if now is not None else time.time()
+    return max(0.0, anchor - float(obs))
 
 
 def _last_action(health: dict[str, Any] | None) -> str:
@@ -122,7 +137,12 @@ def _last_action(health: dict[str, Any] | None) -> str:
     return outcome
 
 
-def read_status_headline(program: str, state_dir: Path) -> StatusHeadline:
+def read_status_headline(
+    program: str,
+    state_dir: Path,
+    *,
+    now: float | None = None,
+) -> StatusHeadline:
     """Read the supervisor state files and return a StatusHeadline.
 
     Public API. The CLI calls this; tests call this with a
@@ -132,13 +152,17 @@ def read_status_headline(program: str, state_dir: Path) -> StatusHeadline:
     map to a sensible default state rather than raising. The
     dispatcher's contract is "one-line headline or 'unknown'", not
     "raise on transient state corruption".
+
+    `now` is the wall-clock anchor used for staleness + uptime.
+    Defaults to `time.time()`; tests inject a frozen `now` to
+    pin staleness boundaries deterministically.
     """
     health = _read_json(state_dir / "health.json")
     latest = _read_json(state_dir / "latest.json")
     return StatusHeadline(
         program=program,
-        state=_classify(health, latest),
-        uptime_seconds=_uptime_seconds(latest),
+        state=_classify(health, latest, now=now),
+        uptime_seconds=_uptime_seconds(latest, now=now),
         last_action=_last_action(health),
     )
 

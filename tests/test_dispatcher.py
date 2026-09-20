@@ -94,9 +94,72 @@ def test_run_live_extra_args_are_appended() -> None:
     runner = FakeRunner()
     runner.queue(QueuedResponse(returncode=0))
     d = Dispatcher(runner=runner)
-    d.run_live(extra_args=["--run-root", "/tmp/x"])
+    d.run_live(extra_args=["--run-root", "/tmp/x"])  # noqa: S108
     argv = _resolved_argv(runner.calls[0])
-    assert argv[-2:] == ["--run-root", "/tmp/x"]
+    assert argv[-2:] == ["--run-root", "/tmp/x"]  # noqa: S108
+
+
+def test_run_live_auto_injects_model_route_from_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MATHLINT_MODEL_ROUTE present in env is forwarded to the subprocess.
+
+    Pinned because the dispatcher's env-merging policy must NOT
+    silently drop env vars that mathlint expects (e.g. when the
+    operator runs `MATHLINT_MODEL_ROUTE=... bash some-script.sh`
+    that then calls the dispatcher).
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    env = FakeEnvironment(
+        values={"MATHLINT_MODEL_ROUTE": "openai-codex/from-env"}
+    )
+    d = Dispatcher(runner=runner, environment=env)
+    d.run_live()
+    sent_env = runner.calls[0].env
+    assert sent_env is not None
+    assert sent_env["MATHLINT_MODEL_ROUTE"] == "openai-codex/from-env"
+
+
+def test_run_live_auto_injects_model_route_from_local_toml(tmp_path: Path) -> None:
+    """When MATHLINT_MODEL_ROUTE is absent but local.toml carries model_route,
+    the dispatcher resolves and forwards the configured route.
+
+    This is the operator's "stop exporting per-shell" path. A test
+    failure here means a regression in the resolve_model_route +
+    _run_subprocess plumbing.
+    """
+    cfg = tmp_path / "local.toml"
+    cfg.write_text('model_route = "openai-codex/from-local-toml"\n', encoding="utf-8")
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(cfg)})
+    d = Dispatcher(runner=runner, environment=env)
+    d.run_live()
+    sent_env = runner.calls[0].env
+    assert sent_env is not None
+    assert sent_env["MATHLINT_MODEL_ROUTE"] == "openai-codex/from-local-toml"
+
+
+def test_run_live_omits_model_route_when_unresolved(tmp_path: Path) -> None:
+    """No env var AND no local.toml -> MATHLINT_MODEL_ROUTE NOT in subprocess env.
+
+    The dispatcher fails-closed on missing config: it does NOT inject
+    an empty string (which mathlint would treat as a different error
+    than 'not configured') and it does NOT raise. The launch refusal
+    belongs to mathlint, not the dispatcher.
+    """
+    cfg = tmp_path / "does-not-exist.toml"
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(cfg)})
+    d = Dispatcher(runner=runner, environment=env)
+    d.run_live()
+    sent_env = runner.calls[0].env
+    assert sent_env is not None
+    assert "MATHLINT_MODEL_ROUTE" not in sent_env, (
+        f"dispatcher must not inject missing route; got env={sent_env!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +370,7 @@ def test_hermetic_policy_with_no_extra_env_sends_empty_env(tmp_path: Path) -> No
     d = Dispatcher(runner=runner, environment=env, policy=policy)
     d.run_live()
     sent_env = runner.calls[0].env
-    assert sent_env == {}, (
-        f"hermetic policy leaked inherited env: {sent_env}"
-    )
+    assert sent_env == {}, f"hermetic policy leaked inherited env: {sent_env}"
 
 
 # ---------------------------------------------------------------------------
@@ -383,8 +444,8 @@ def test_watch_timeout_uses_watch_default() -> None:
     runner = FakeRunner()
     runner.queue(QueuedResponse(returncode=0))
     d = Dispatcher(runner=runner)
-    cfg = Path("/tmp/monitor.toml")
-    script = Path("/tmp/start.sh")
+    cfg = Path("/tmp/monitor.toml")  # noqa: S108
+    script = Path("/tmp/start.sh")  # noqa: S108
     d.run_watch(cfg, script)
     assert runner.calls[0].timeout is None  # no timeout on TUI by default
 

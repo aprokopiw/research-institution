@@ -156,10 +156,7 @@ def test_gate_closed_when_architecture_review_required(tmp_path: Path, monkeypat
     import subprocess as sp
 
     def fake_run(cmd, **kw):
-        return sp.CompletedProcess(
-            cmd, 0,
-            stdout=ROADMAP_CLOSED, stderr=""
-        )
+        return sp.CompletedProcess(cmd, 0, stdout=ROADMAP_CLOSED, stderr="")
 
     monkeypatch.setattr(sp, "run", fake_run)
     v = check_gate(_fake_program(tmp_path), mathlint_bin="mathlint")
@@ -201,10 +198,7 @@ def test_gate_closed_when_roadmap_fails(tmp_path: Path, monkeypatch) -> None:
     import subprocess as sp
 
     def fake_run(cmd, **kw):
-        return sp.CompletedProcess(
-            cmd, 3,
-            stdout="", stderr="FATAL: no mathlint.toml"
-        )
+        return sp.CompletedProcess(cmd, 3, stdout="", stderr="FATAL: no mathlint.toml")
 
     monkeypatch.setattr(sp, "run", fake_run)
     v = check_gate(_fake_program(tmp_path))
@@ -284,7 +278,7 @@ def test_start_refuses_on_closed_gate(cli_runner, tmp_path: Path, monkeypatch) -
         f"expected {EXIT_GATE_CLOSED}, got {result.exit_code}; "
         f"stdout={result.stdout!r} stderr={getattr(result, 'stderr', '')!r}"
     )
-    combined = (result.stdout or "") + (getattr(result, 'stderr', '') or "")
+    combined = (result.stdout or "") + (getattr(result, "stderr", "") or "")
     assert "GATE NOT OPEN" in combined
     assert "ARCHITECTURE_REVIEW_REQUIRED" in combined
 
@@ -297,12 +291,12 @@ def test_start_skip_gate_proceeds(cli_runner, tmp_path: Path, monkeypatch) -> No
 
     monkeypatch.setattr(cli_mod, "_require_program", lambda name: _fake_program(tmp_path))
     monkeypatch.setattr(cli_mod, "_load", lambda: [_fake_program(tmp_path)])
-    monkeypatch.setattr(sp, "run", lambda *a, **kw: sp.CompletedProcess(a[0], 0, stdout=ROADMAP_CLOSED, stderr=""))
+    monkeypatch.setattr(
+        sp, "run", lambda *a, **kw: sp.CompletedProcess(a[0], 0, stdout=ROADMAP_CLOSED, stderr="")
+    )
     # Mathlint binary must resolve from PATH; conftest puts a fake one in shims.
     result = cli_runner.invoke(args=["start", "x", "--skip-gate"], catch_exceptions=False)
     # The fake mathlint exits 0; the dispatcher should also exit 0.
-    assert result.exit_code == 0, (
-        f"got {result.exit_code}; stdout={result.stdout!r}"
-    )
-    combined = (result.stdout or "") + (getattr(result, 'stderr', '') or "")
+    assert result.exit_code == 0, f"got {result.exit_code}; stdout={result.stdout!r}"
+    combined = (result.stdout or "") + (getattr(result, "stderr", "") or "")
     assert "--skip-gate" in combined or "bypassed" in combined.lower()

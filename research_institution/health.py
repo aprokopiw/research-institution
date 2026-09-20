@@ -74,7 +74,10 @@ def _run_hermetic_green_gate() -> HealthCheck:
     try:
         completed = subprocess.run(
             ["bash", str(gate), "--hermetic"],
-            capture_output=True, text=True, timeout=60, check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return HealthCheck(
@@ -88,7 +91,9 @@ def _run_hermetic_green_gate() -> HealthCheck:
         name="green-gate-hermetic",
         ok=ok,
         summary=("engine + supervisor + program wired" if ok else f"rc={completed.returncode}"),
-        suggestion="" if ok else "run research health <program> with --verbose for the full gate output",
+        suggestion=""
+        if ok
+        else "run research health <program> with --verbose for the full gate output",
         evidence=completed.stdout.strip().splitlines()[-1] if completed.stdout.strip() else "",
     )
 
@@ -105,9 +110,11 @@ def _run_live_preflight() -> HealthCheck:
     config_path = str(Path.home() / ".config" / "mathlint" / "local.toml")
     try:
         completed = subprocess.run(
-            ["mathlint", "system-readiness", "--no-write", "--json",
-             "--config", config_path],
-            capture_output=True, text=True, timeout=60, check=False,
+            ["mathlint", "system-readiness", "--no-write", "--json", "--config", config_path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
     except FileNotFoundError:
         return HealthCheck(
@@ -167,13 +174,21 @@ def _run_live_preflight() -> HealthCheck:
         cid = c.get("id", "?")
         diag = c.get("diagnostic", "")
         if cid == "MATH001" or cid == "MATH002":
-            suggestion_lines.append(f"{cid}: run `cd ~/Documents/andrei/math && make check` (or commit/stash the dirty changes)")
+            suggestion_lines.append(
+                f"{cid}: run `cd ~/Documents/andrei/math && make check` (or commit/stash the dirty changes)"
+            )
         elif cid == "LOCAL022" or cid == "PAIR001":
-            suggestion_lines.append(f"{cid}: math repo is dirty — run `cd ~/Documents/andrei/math && git status` then commit/stash")
+            suggestion_lines.append(
+                f"{cid}: math repo is dirty — run `cd ~/Documents/andrei/math && git status` then commit/stash"
+            )
         elif cid == "LOCAL004":
-            suggestion_lines.append(f"{cid}: --no-write mode is informational only; the real fix is to bootstrap the receipt (see SMOKE001) or commit/stash the dirty changes")
+            suggestion_lines.append(
+                f"{cid}: --no-write mode is informational only; the real fix is to bootstrap the receipt (see SMOKE001) or commit/stash the dirty changes"
+            )
         elif cid == "SMOKE001":
-            suggestion_lines.append(f"{cid}: run `mathlint first-run --project kaplansky` to bootstrap the receipt")
+            suggestion_lines.append(
+                f"{cid}: run `mathlint first-run --project kaplansky` to bootstrap the receipt"
+            )
         elif cid == "MODEL001":
             suggestion_lines.append(f"{cid}: install pi (`brew install pi`)")
         elif cid == "MODEL002":
@@ -181,7 +196,9 @@ def _run_live_preflight() -> HealthCheck:
         elif cid == "POSTGRES004":
             suggestion_lines.append(f"{cid}: run `mathlint postgres-cycle`")
         elif cid == "TOOL001":
-            suggestion_lines.append(f"{cid}: run `pi-monitor doctor --config ~/.config/mathlint/local-pi-monitor.toml`")
+            suggestion_lines.append(
+                f"{cid}: run `pi-monitor doctor --config ~/.config/mathlint/local-pi-monitor.toml`"
+            )
         else:
             suggestion_lines.append(f"{cid}: {diag[:120]}")
     return HealthCheck(
@@ -203,6 +220,7 @@ def _check_architecture_review_gate(program: str) -> HealthCheck:
     cd into it before invoking.
     """
     from research_institution.catalog import load_catalog
+
     catalog = load_catalog(catalog_path())
     prog = next((p for p in catalog if p.name == program), None)
     if prog is None:
@@ -224,7 +242,10 @@ def _check_architecture_review_gate(program: str) -> HealthCheck:
     try:
         completed = subprocess.run(
             ["mathlint", "roadmap"],
-            capture_output=True, text=True, timeout=30, check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
             cwd=str(cwd),
         )
     except FileNotFoundError:
@@ -242,6 +263,7 @@ def _check_architecture_review_gate(program: str) -> HealthCheck:
             evidence=completed.stderr.strip()[:120] if completed.stderr else "",
         )
     import re
+
     m = re.search(r"^TASK KIND:\s*(\S+)", completed.stdout, re.MULTILINE)
     if m is None:
         return HealthCheck(
@@ -289,9 +311,11 @@ def _check_receipt_freshness() -> HealthCheck:
     # Read math HEAD.
     try:
         head = subprocess.run(
-            ["git", "-C", str(Path.home() / "Documents" / "andrei" / "math"),
-             "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10, check=False,
+            ["git", "-C", str(Path.home() / "Documents" / "andrei" / "math"), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         ).stdout.strip()
     except FileNotFoundError:
         return HealthCheck(
@@ -317,6 +341,7 @@ def _check_receipt_freshness() -> HealthCheck:
 def _check_supervisor_alive(program: str) -> tuple[HealthCheck, int, bool]:
     """Reuse the supervisor probe; return the check + state."""
     from research_institution.supervisor import probe_default_supervisor
+
     state = probe_default_supervisor()
     if state.is_alive:
         return (

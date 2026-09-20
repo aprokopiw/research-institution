@@ -67,12 +67,11 @@ def test_skill_description_includes_display_name() -> None:
     # The description field specifically is the catalog-derived one.
     # Find the description line and assert it's not a generic stub.
     import re as _re
+
     desc_match = _re.search(r"description:\s*(.+)", out)
     assert desc_match is not None, "no description: field in frontmatter"
     desc = desc_match.group(1)
-    assert p.display_name in desc, (
-        f"description missing display_name; got: {desc!r}"
-    )
+    assert p.display_name in desc, f"description missing display_name; got: {desc!r}"
     assert "WRONG" not in desc, "description contains literal 'WRONG'"
 
 
@@ -123,6 +122,7 @@ def test_skill_template_uses_format_map_placeholders() -> None:
     # And the template's `.format_map` keys must all be in the set.
     # Extract placeholders via a quick parse.
     import re as _re
+
     found = set(_re.findall(r"\{([a-z_]+)\}", SKILL_TEMPLATE))
     assert found == expected_placeholders, (
         f"template placeholders drift: {found - expected_placeholders} "

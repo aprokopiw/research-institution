@@ -62,15 +62,13 @@ def test_names_match_pattern(catalog: dict) -> None:
 
 def test_entry_points_are_unique(catalog: dict) -> None:
     endpoints = [entry["entry_point"].split(":")[0] for entry in catalog["programs"]]
-    assert len(endpoints) == len(set(endpoints)), (
-        f"duplicate entry_point modules: {endpoints}"
-    )
+    assert len(endpoints) == len(set(endpoints)), f"duplicate entry_point modules: {endpoints}"
 
 
 def test_local_paths_are_absolute_or_homed(catalog: dict) -> None:
     for entry in catalog["programs"]:
         local = entry["local_path"]
-        assert local.startswith("/") or local.startswith("$HOME"), (
+        assert local.startswith(("/", "$HOME")), (
             f"local_path {local!r} for {entry['name']!r} must start with '/' or '$HOME'"
         )
 

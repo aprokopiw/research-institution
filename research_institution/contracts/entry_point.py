@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,22 +57,28 @@ def parse_entry_point(entry_point: str) -> EntryPointSpec:
     if not isinstance(entry_point, str):
         raise ValueError(f"entry_point must be a string; got {type(entry_point).__name__}")
     if ":" not in entry_point:
-        raise ValueError(f"entry_point {entry_point!r} must contain ':' separating module from callable")
+        raise ValueError(
+            f"entry_point {entry_point!r} must contain ':' separating module from callable"
+        )
     module_path, _, callable_name = entry_point.rpartition(":")
-    if not module_path.strip():
-        raise ValueError(f"entry_point {entry_point!r} has empty module path")
-    if not callable_name.strip():
-        raise ValueError(f"entry_point {entry_point!r} has empty callable name")
+    # Whitespace checks BEFORE empty checks: a malformed `"x:  "` is
+    # more usefully diagnosed as "callable has whitespace" than as
+    # "callable is empty". The order also matches the predicate that
+    # would catch a paste error (trailing space) first.
     if module_path != module_path.strip() or " " in module_path:
         raise ValueError(f"entry_point module path {module_path!r} contains whitespace")
     if " " in callable_name:
         raise ValueError(f"entry_point callable {callable_name!r} contains whitespace")
+    if not module_path:
+        raise ValueError(f"entry_point {entry_point!r} has empty module path")
+    if not callable_name:
+        raise ValueError(f"entry_point {entry_point!r} has empty callable name")
     return EntryPointSpec(module_path=module_path, callable_name=callable_name)
 
 
 def validate_entry_point(
     spec: EntryPointSpec, *, import_module: bool = False
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Check that `spec.module_path` is importable + `spec.callable_name` exists.
 
     Returns `(ok, reason)` where `ok=True` iff the entry point is well-formed

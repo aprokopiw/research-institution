@@ -56,9 +56,13 @@ class Program:
 
     def __post_init__(self) -> None:
         if not _PROGRAM_NAME_RE.match(self.name):
-            raise ValueError(f"program name {self.name!r} does not match {_PROGRAM_NAME_RE.pattern}")
+            raise ValueError(
+                f"program name {self.name!r} does not match {_PROGRAM_NAME_RE.pattern}"
+            )
         if not _GIT_REF_RE.match(self.mathlint_pin):
-            raise ValueError(f"mathlint_pin {self.mathlint_pin!r} does not match {_GIT_REF_RE.pattern}")
+            raise ValueError(
+                f"mathlint_pin {self.mathlint_pin!r} does not match {_GIT_REF_RE.pattern}"
+            )
         if not self.repository.startswith("https://"):
             raise ValueError(f"repository {self.repository!r} must be an https:// URL")
         if not self.entry_point:
@@ -129,6 +133,7 @@ def _parse_one(entry: dict, idx: int) -> Program:
     # contracts/entry_point.py). Shape-only; import-time validation
     # is the green gate's job, not the catalog loader's.
     from research_institution.contracts.entry_point import parse_entry_point
+
     parse_entry_point(entry["entry_point"])
 
     return Program(

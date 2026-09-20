@@ -52,8 +52,21 @@ line-length = 100
 src = ["tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "N", "S", "C4", "DTZ", "PIE", "RET", "SIM"]
-ignore = ["S101", "S104"]
+# V0 rule set. See docs/operations/verification-gates.md for rationale.
+# Excluded by design:
+#   E501 — long lines are formatting; `ruff format` is the formatter.
+#          Long f-strings in error messages are clearer than wrapping.
+#   S101 — pytest uses `assert` semantically.
+#   S603 — all subprocess callsites pass argv lists (no shell=True).
+#   S607 — operator-PATH resolution is intentional; the institution
+#          assumes mathlint / pi-monitor / bash are on PATH.
+select = ["E", "F", "W", "B", "S", "UP", "N", "PIE", "RET", "SIM"]
+ignore = ["E501", "S101", "S104", "S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files use `assert` for pytest semantics; allow S101 globally
+# but still flag any other rule.
+"tests/**" = ["S101"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

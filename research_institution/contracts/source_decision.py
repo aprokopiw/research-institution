@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Union
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ class Stop:
 
 
 # The tagged union of the four decision variants.
-SourceDecision = Union[Dispatch, Wait, OperatorRequired, Stop]
+SourceDecision = Dispatch | Wait | OperatorRequired | Stop
 
 
 def parse_source_decision(envelope: dict[str, Any]) -> SourceDecision:
@@ -206,10 +206,7 @@ def parse_source_decision(envelope: dict[str, Any]) -> SourceDecision:
         return Dispatch(
             source_revision=rev,
             decided_unix=decided_unix,
-            work=[
-                _parse_work_request(w)
-                for w in envelope.get("work", [])
-            ],
+            work=[_parse_work_request(w) for w in envelope.get("work", [])],
             reason_code=envelope.get("reason_code", REASON_WORK_AVAILABLE),
             reason=envelope.get("reason", ""),
         )

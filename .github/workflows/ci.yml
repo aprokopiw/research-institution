@@ -1,0 +1,52 @@
+name: ci
+
+# CI for research-institution.
+#
+# This repo's V0 (structural validity) gate is enforced HERE.
+# V1 (unit tests) is enforced by `pytest`. V2 (hermetic green gate)
+# is the institution's canonical wiring check, delegated to mathlint
+# via green-gate/check-institution.sh --hermetic.
+#
+# If you change the V0 rule set below, update
+# docs/operations/verification-gates.md so the meaning of GREEN
+# stays precise.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  v0-static:
+    name: V0 — structural validity (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v1
+        with:
+          # Curated rule set. Drop cosmetic-only categories; keep
+          # real-bug + real-security rules. The full list is in
+          # docs/operations/verification-gates.md.
+          args: "check research_institution tests --select E,F,W,S,B,UP,SIM,PIE,RET,N --ignore S101,S603,S607"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+  v1-tests:
+    name: V1 — unit tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  v2-hermetic-institution:
+    name: V2 — hermetic institution wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run hermetic green gate
+        run: bash green-gate/check-institution.sh --hermetic

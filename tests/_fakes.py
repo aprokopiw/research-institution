@@ -34,7 +34,8 @@ import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
+from collections.abc import Mapping
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +206,7 @@ class FakeCall:
     kwargs: Mapping[str, Any]
 
     @classmethod
-    def from_args(cls, args: tuple[Any, ...], kwargs: Mapping[str, Any]) -> "FakeCall":
+    def from_args(cls, args: tuple[Any, ...], kwargs: Mapping[str, Any]) -> FakeCall:
         argv = tuple(args[0]) if args else ()
         return cls(
             argv=argv,

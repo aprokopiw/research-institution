@@ -45,7 +45,7 @@ def cli_runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("FAKE_SHIM_LOG", str(shim_log))
     for name in ("mathlint", "pi-monitor"):
         (shim_dir / name).write_text(
-            f"#!/bin/sh\necho \"fake $0 $*\" >> \"{shim_log}\"\nexit 0\n",
+            f'#!/bin/sh\necho "fake $0 $*" >> "{shim_log}"\nexit 0\n',
             encoding="utf-8",
         )
         (shim_dir / name).chmod(0o755)

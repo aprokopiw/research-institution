@@ -74,6 +74,7 @@ def test_rejects_duplicate_names() -> None:
     try:
         with pytest.raises(ValueError, match="duplicate program name"):
             from research_institution import catalog as cat_mod
+
             cat_mod.load_catalog(fake_path)
     finally:
         fake_path.unlink()
@@ -82,6 +83,7 @@ def test_rejects_duplicate_names() -> None:
 def test_rejects_non_https_repo() -> None:
     """Repositories must be https:// (not git@, not ssh://)."""
     from research_institution import catalog as cat_mod
+
     fake_path = REPO / "tests" / "fixtures" / "_tmp_ssh.toml"
     fake_path.parent.mkdir(parents=True, exist_ok=True)
     fake_path.write_text(
@@ -117,7 +119,7 @@ def test_rejects_malformed_entry_point() -> None:
     fake_path.write_text(
         '[[programs]]\nname = "x"\ndisplay_name = "x"\nrepository = "https://x"\n'
         'entry_point = "no_colon_here"\nlocal_path = "/x"\nmathlint_pin = "v1"\n'
-        'live_credentials_required = false\nlive_credential_env_vars = []\n'
+        "live_credentials_required = false\nlive_credential_env_vars = []\n"
         'check_program_script = "x.sh"\n',
         encoding="utf-8",
     )

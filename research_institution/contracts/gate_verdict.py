@@ -82,9 +82,7 @@ class GateVerdict:
         # Catches typos at construction time, not at the call site.
         valid = {s.value for s in GateVerdictStatus}
         if self.status not in valid:
-            raise ValueError(
-                f"GateVerdict.status must be one of {valid}; got {self.status!r}"
-            )
+            raise ValueError(f"GateVerdict.status must be one of {valid}; got {self.status!r}")
 
     @property
     def gate_open(self) -> bool:
@@ -92,7 +90,7 @@ class GateVerdict:
         return self.status == GateVerdictStatus.OPEN
 
     @classmethod
-    def from_text(cls, text: str) -> "GateVerdict":
+    def from_text(cls, text: str) -> GateVerdict:
         """Parse a `mathlint roadmap` output string into a verdict.
 
         Pure function (no subprocess, no I/O). Use this in tests with

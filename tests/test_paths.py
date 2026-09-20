@@ -25,10 +25,12 @@ from research_institution.paths import (
     default_environment,
     green_gate_path,
     institution_dir,
+    mathlint_local_config_path,
     missing_credentials,
     pi_monitor_config_path,
     pi_monitor_repo,
     pi_monitor_start_script,
+    resolve_model_route,
 )
 from tests._fakes import FakeEnvironment
 
@@ -158,8 +160,8 @@ def test_pi_monitor_start_script_is_repo_plus_filename(tmp_path: Path) -> None:
 
 
 def test_agent_skills_dir_uses_env_override() -> None:
-    env = FakeEnvironment(values={"PI_AGENT_SKILLS_DIR": "/tmp/my_skills"})
-    assert agent_skills_dir(env) == Path("/tmp/my_skills")
+    env = FakeEnvironment(values={"PI_AGENT_SKILLS_DIR": "/tmp/my_skills"})  # noqa: S108
+    assert agent_skills_dir(env) == Path("/tmp/my_skills")  # noqa: S108
 
 
 def test_agent_skills_dir_falls_back_to_default() -> None:
@@ -205,6 +207,7 @@ def test_default_environment_returns_os_environ_wrapper() -> None:
     PATH via it matches os.environ."""
     e = default_environment()
     import os as _os
+
     assert e.get("PATH") == _os.environ.get("PATH")
 
 
@@ -218,11 +221,128 @@ def test_environment_protocol_can_be_subclassed() -> None:
     from research_institution.paths import Environment
 
     class _MyEnv:
-        def get(self, name): return "v"
+        def get(self, name):
+            return "v"
 
-        def require(self, name): return "v"
+        def require(self, name):
+            return "v"
 
-        def copy(self): return {"name": "v"}
+        def copy(self):
+            return {"name": "v"}
 
     env: Environment = _MyEnv()
     assert env.get("anything") == "v"
+
+
+# ---------------------------------------------------------------------------
+# resolve_model_route: env-first, then local.toml fallback.
+#
+# Per @ADR-0001 the operator's canonical place for the live model
+# route is `~/.config/mathlint/local.toml` (the `model_route` field).
+# The dispatcher auto-injects MATHLINT_MODEL_ROUTE from that file when
+# the env var is unset. These tests pin the resolution order and the
+# failure modes (missing file, malformed TOML, empty value).
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_model_route_env_var_wins(tmp_path: Path) -> None:
+    """Explicit MATHLINT_MODEL_ROUTE env var overrides local.toml."""
+    (tmp_path / "local.toml").write_text(
+        'model_route = "openai-codex/from-file"\n',
+        encoding="utf-8",
+    )
+    env = FakeEnvironment(
+        values={
+            "MATHLINT_MODEL_ROUTE": "openai-codex/from-env",
+            "MATHLINT_CONFIG": str(tmp_path / "local.toml"),
+        }
+    )
+    assert resolve_model_route(env) == "openai-codex/from-env"
+
+
+def test_resolve_model_route_falls_back_to_local_toml(tmp_path: Path) -> None:
+    """When MATHLINT_MODEL_ROUTE is unset, read `model_route` from local.toml.
+
+    This is the path the operator wanted: configure once in the TOML
+    and stop exporting per-shell.
+    """
+    (tmp_path / "local.toml").write_text(
+        'model_route = "openai-codex/gpt-5.6-luna"\n',
+        encoding="utf-8",
+    )
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(tmp_path / "local.toml")})
+    assert resolve_model_route(env) == "openai-codex/gpt-5.6-luna"
+
+
+def test_resolve_model_route_returns_none_when_unset(tmp_path: Path) -> None:
+    """No env var AND no local.toml -> None (dispatcher will refuse live)."""
+    # Point MATHLINT_CONFIG at a path that does NOT exist so we don't
+    # accidentally read the operator's real config in this test.
+    env = FakeEnvironment(
+        values={"MATHLINT_CONFIG": str(tmp_path / "does-not-exist.toml")}
+    )
+    assert resolve_model_route(env) is None
+
+
+def test_resolve_model_route_returns_none_for_empty_env_value(tmp_path: Path) -> None:
+    """An empty MATHLINT_MODEL_ROUTE is treated as 'not set'.
+
+    Without this, an accidental `export MATHLINT_MODEL_ROUTE=` (empty)
+    would inject "" into the subprocess env, which mathlint would then
+    refuse with a different (less actionable) error than the dispatcher's
+    'no route configured' diagnostic.
+    """
+    env = FakeEnvironment(values={"MATHLINT_MODEL_ROUTE": ""})
+    assert resolve_model_route(env) is None
+
+
+def test_resolve_model_route_returns_none_for_empty_toml_field(tmp_path: Path) -> None:
+    """An empty `model_route` field in local.toml is treated as 'not set'.
+
+    Mirrors the env-empty case: never inject an empty string into
+    subprocess env.
+    """
+    (tmp_path / "local.toml").write_text('model_route = ""\n', encoding="utf-8")
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(tmp_path / "local.toml")})
+    assert resolve_model_route(env) is None
+
+
+def test_resolve_model_route_returns_none_on_malformed_toml(tmp_path: Path) -> None:
+    """A malformed local.toml is treated as 'no route configured'.
+
+    Fail-closed: a syntax error in the operator's config MUST NOT
+    cause the dispatcher to launch with a stale/wrong route. Better
+    to refuse and surface the parse error than to silently misroute
+    LLM calls.
+    """
+    (tmp_path / "local.toml").write_text(
+        "this is not = valid TOML [[[\n",
+        encoding="utf-8",
+    )
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(tmp_path / "local.toml")})
+    assert resolve_model_route(env) is None
+
+
+def test_resolve_model_route_ignores_non_string_field(tmp_path: Path) -> None:
+    """A non-string `model_route` field (e.g. int) is ignored.
+
+    Defensive against operator-side tooling that might insert the
+    wrong shape; the resolver must never inject a non-string into
+    subprocess env (subprocess.run rejects it).
+    """
+    (tmp_path / "local.toml").write_text("model_route = 42\n", encoding="utf-8")
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(tmp_path / "local.toml")})
+    assert resolve_model_route(env) is None
+
+
+def test_mathlint_local_config_path_uses_env_override(tmp_path: Path) -> None:
+    """MATHLINT_CONFIG env var overrides the default `~/.config/...` path."""
+    cfg = tmp_path / "alt-config.toml"
+    env = FakeEnvironment(values={"MATHLINT_CONFIG": str(cfg)})
+    assert mathlint_local_config_path(env) == cfg
+
+
+def test_mathlint_local_config_path_defaults_to_home_vault() -> None:
+    """When MATHLINT_CONFIG is unset, default is `~/.config/mathlint/local.toml`."""
+    env = FakeEnvironment(values={})
+    assert mathlint_local_config_path(env) == Path.home() / ".config" / "mathlint" / "local.toml"

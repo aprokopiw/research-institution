@@ -47,9 +47,12 @@ def test_format_health_one_failure_surfaces_suggestion() -> None:
         program="kaplansky",
         checks=[
             _check("green-gate-hermetic", True, "wired"),
-            _check("receipt-freshness", False,
-                   "receipt commit 921967c != math HEAD 2860666a",
-                   suggestion="run `mathlint first-run --project kaplansky`"),
+            _check(
+                "receipt-freshness",
+                False,
+                "receipt commit 921967c != math HEAD 2860666a",
+                suggestion="run `mathlint first-run --project kaplansky`",
+            ),
             _check("supervisor-alive", True, "pid 43960"),
         ],
     )
@@ -101,16 +104,19 @@ def test_format_health_multiline_suggestion() -> None:
     report = HealthReport(
         program="kaplansky",
         checks=[
-            _check("live-preflight", False,
-                   "3/12 failed",
-                   suggestion="SMOKE001: bootstrap receipt\nLOCAL022: math dirty"),
+            _check(
+                "live-preflight",
+                False,
+                "3/12 failed",
+                suggestion="SMOKE001: bootstrap receipt\nLOCAL022: math dirty",
+            ),
         ],
     )
     out = format_health(report)
     assert "SMOKE001: bootstrap receipt" in out
     assert "LOCAL022: math dirty" in out
     # Both lines should be prefixed with "      fix:"
-    fix_lines = [l for l in out.splitlines() if "fix:" in l]
+    fix_lines = [line for line in out.splitlines() if "fix:" in line]
     assert len(fix_lines) >= 2
 
 
@@ -118,9 +124,10 @@ def test_health_check_slots_frozen() -> None:
     """HealthCheck is frozen; can't be mutated after creation."""
     c = _check("a", True)
     import dataclasses
+
     try:
         c.ok = False  # type: ignore[misc]
         # If this doesn't raise, the dataclass isn't frozen.
-        assert False, "HealthCheck is not frozen"
+        raise AssertionError("HealthCheck is not frozen")
     except dataclasses.FrozenInstanceError:
         pass

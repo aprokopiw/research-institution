@@ -235,16 +235,19 @@ def test_missing_kind_raises_value_error() -> None:
 
 def test_canonical_reason_codes_is_frozen() -> None:
     """Pin the canonical reason-code set; drift here surfaces immediately."""
-    assert CANONICAL_REASON_CODES == frozenset(
-        {
-            REASON_NO_ELIGIBLE_WORK,
-            REASON_FRONTIER_EXHAUSTED,
-            REASON_BLOCKED_WORK_PRESENT,
-            REASON_WORK_AVAILABLE,
-            REASON_WAIT_REQUESTED,
-            REASON_OPERATOR_REQUIRED,
-            REASON_STOP_REQUESTED,
-        }
+    assert (
+        frozenset(
+            {
+                REASON_NO_ELIGIBLE_WORK,
+                REASON_FRONTIER_EXHAUSTED,
+                REASON_BLOCKED_WORK_PRESENT,
+                REASON_WORK_AVAILABLE,
+                REASON_WAIT_REQUESTED,
+                REASON_OPERATOR_REQUIRED,
+                REASON_STOP_REQUESTED,
+            }
+        )
+        == CANONICAL_REASON_CODES
     )
 
 

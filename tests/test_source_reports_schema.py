@@ -61,63 +61,28 @@ def test_malformed_json_raises() -> None:
 
 def test_unknown_outcome_coerces_to_other() -> None:
     """Unknown `outcome` value maps to `OTHER` (defensive default)."""
-    data = json.dumps({
-        "attempt_id": "x-1",
-        "attempt_ordinal": 1,
-        "digest": "abc",
-        "envelope_digest": "abc",
-        "operation_id": "op",
-        "outcome": "FUTURE_THING_MATHLINT_INVENTED",
-        "report_id": "x-1",
-        "source_identity": "mathlint",
-        "source_revision": "deadbeef",
-        "status": "pending",
-    })
+    data = json.dumps(
+        {
+            "attempt_id": "x-1",
+            "attempt_ordinal": 1,
+            "digest": "abc",
+            "envelope_digest": "abc",
+            "operation_id": "op",
+            "outcome": "FUTURE_THING_MATHLINT_INVENTED",
+            "report_id": "x-1",
+            "source_identity": "mathlint",
+            "source_revision": "deadbeef",
+            "status": "pending",
+        }
+    )
     r = parse_source_report(data)
     assert r.outcome == "OTHER"
 
 
 def test_unknown_status_coerces_to_other() -> None:
     """Unknown `status` value maps to `OTHER`."""
-    data = json.dumps({
-        "attempt_id": "x-1",
-        "attempt_ordinal": 1,
-        "digest": "abc",
-        "envelope_digest": "abc",
-        "operation_id": "op",
-        "outcome": "dispatch",
-        "report_id": "x-1",
-        "source_identity": "mathlint",
-        "source_revision": "deadbeef",
-        "status": "PARTIALLY_COMPLETE_FUTURE_STATE",
-    })
-    r = parse_source_report(data)
-    assert r.status == "OTHER"
-
-
-def test_known_outcome_round_trip() -> None:
-    """Known Outcome values parse to themselves."""
-    for outcome in [o for o in Outcome if o != Outcome.OTHER]:
-        data = json.dumps({
-            "attempt_id": "x-1",
-            "attempt_ordinal": 1,
-            "digest": "abc",
-            "envelope_digest": "abc",
-            "operation_id": "op",
-            "outcome": outcome.value,
-            "report_id": "x-1",
-            "source_identity": "mathlint",
-            "source_revision": "deadbeef",
-            "status": "pending",
-        })
-        r = parse_source_report(data)
-        assert r.outcome == outcome.value
-
-
-def test_known_work_status_round_trip() -> None:
-    """Known WorkStatus values parse to themselves."""
-    for status in [s for s in WorkStatus if s != WorkStatus.OTHER]:
-        data = json.dumps({
+    data = json.dumps(
+        {
             "attempt_id": "x-1",
             "attempt_ordinal": 1,
             "digest": "abc",
@@ -127,8 +92,51 @@ def test_known_work_status_round_trip() -> None:
             "report_id": "x-1",
             "source_identity": "mathlint",
             "source_revision": "deadbeef",
-            "status": status.value,
-        })
+            "status": "PARTIALLY_COMPLETE_FUTURE_STATE",
+        }
+    )
+    r = parse_source_report(data)
+    assert r.status == "OTHER"
+
+
+def test_known_outcome_round_trip() -> None:
+    """Known Outcome values parse to themselves."""
+    for outcome in [o for o in Outcome if o != Outcome.OTHER]:
+        data = json.dumps(
+            {
+                "attempt_id": "x-1",
+                "attempt_ordinal": 1,
+                "digest": "abc",
+                "envelope_digest": "abc",
+                "operation_id": "op",
+                "outcome": outcome.value,
+                "report_id": "x-1",
+                "source_identity": "mathlint",
+                "source_revision": "deadbeef",
+                "status": "pending",
+            }
+        )
+        r = parse_source_report(data)
+        assert r.outcome == outcome.value
+
+
+def test_known_work_status_round_trip() -> None:
+    """Known WorkStatus values parse to themselves."""
+    for status in [s for s in WorkStatus if s != WorkStatus.OTHER]:
+        data = json.dumps(
+            {
+                "attempt_id": "x-1",
+                "attempt_ordinal": 1,
+                "digest": "abc",
+                "envelope_digest": "abc",
+                "operation_id": "op",
+                "outcome": "dispatch",
+                "report_id": "x-1",
+                "source_identity": "mathlint",
+                "source_revision": "deadbeef",
+                "status": status.value,
+            }
+        )
         r = parse_source_report(data)
         assert r.status == status.value
 
@@ -165,18 +173,20 @@ def test_work_status_enum_is_closed() -> None:
 def test_exit_code_can_be_null_or_int() -> None:
     """`exit_code` accepts both null (JSON) and integer."""
     for exit_code in (None, 0, 7):
-        data = json.dumps({
-            "attempt_id": "x-1",
-            "attempt_ordinal": 1,
-            "digest": "abc",
-            "envelope_digest": "abc",
-            "operation_id": "op",
-            "outcome": "dispatch",
-            "report_id": "x-1",
-            "source_identity": "mathlint",
-            "source_revision": "deadbeef",
-            "status": "pending",
-            "exit_code": exit_code,
-        })
+        data = json.dumps(
+            {
+                "attempt_id": "x-1",
+                "attempt_ordinal": 1,
+                "digest": "abc",
+                "envelope_digest": "abc",
+                "operation_id": "op",
+                "outcome": "dispatch",
+                "report_id": "x-1",
+                "source_identity": "mathlint",
+                "source_revision": "deadbeef",
+                "status": "pending",
+                "exit_code": exit_code,
+            }
+        )
         r = parse_source_report(data)
         assert r.exit_code == exit_code

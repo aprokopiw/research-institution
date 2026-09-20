@@ -1,0 +1,195 @@
+# Verification Gates
+
+This document is the operator-facing description of the institution's
+GREEN hierarchy. Per `@INV-0093`, the institution green gate is the
+canonical wiring evidence for the research-institution; this doc
+defines what "GREEN" means at each tier.
+
+## Tier definitions
+
+The repository follows the standard V0–V4 GREEN hierarchy. Each tier
+has a specific purpose and a specific executable command. **GREEN at a
+tier means the tier's command passed; nothing more.** Cross-tier claims
+(e.g. "the dispatcher is bug-free") require cross-tier evidence.
+
+| Tier | Purpose | Command | Status |
+|---|---|---|---|
+| **V0** | structural validity (lint, type, schema) | `ruff check research_institution tests` | PASS (CI + green-gate) |
+| **V1** | fast local confidence (unit tests) | `pytest -q` | PASS (192 tests, 2 skipped) |
+| **V2** | hermetic repository confidence (full suite + green-gate) | `bash green-gate/check-institution.sh --hermetic` | PASS |
+| **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status | PARTIAL |
+| **V4** | system / release assurance (clean-install, live-mode wiring) | `bash green-gate/check-institution.sh --live` (operator-only) | BLOCKED without operator creds; hermetic variant under `RESEARCH_INSTITUTION_HERMETIC=1` |
+
+## V0 — structural validity
+
+**Claim:** code in `research_institution/` and `tests/` is free of the
+classes of bug that ruff's curated rule set catches (E, F, W, B, S,
+UP, N, PIE, RET, SIM categories).
+
+**Excluded by design** (silenced in `pyproject.toml`):
+- `E501` — line length; `ruff format` is the formatter.
+- `S101` — pytest uses `assert` semantically.
+- `S603` — all subprocess callsites pass argv lists (no `shell=True`).
+- `S607` — operator-PATH resolution is intentional; the institution
+  assumes `mathlint`, `pi-monitor`, `bash` are on `PATH`.
+- `S104` — `/tmp` and similar paths are intentional.
+
+**Evidence:** ruff exits 0 against `research_institution` and `tests/`
+as of the current commit. CI runs ruff on every push and PR
+(`.github/workflows/ci.yml::v0-static`). The hermetic green-gate also
+runs ruff as its first sub-check
+(`green-gate/check-institution.sh::run_check "v0-ruff"`).
+
+**Mutation oracle:** if ruff's rule set were silently relaxed (e.g.
+swapping `--select E,F,W,B,S,UP,N,PIE,RET,SIM` for `--select E,F`),
+78 substantive violations in production code (10 S607, 8 S108, 3
+SIM115, 3 SIM105, 1 B904, 1 PIE810, ...) would silently ship. CI
+enforces the curated set; loosening requires editing `pyproject.toml`
++ this doc.
+
+## V1 — fast local confidence
+
+**Claim:** unit tests exercise the dispatcher's typed Python API, the
+catalog loader, the contracts layer, and the entry-point parser with
+deterministic oracles.
+
+**Evidence:** 192 unit tests pass; 2 skipped (live-mode tests that
+require `MATHLINT_MODEL_ROUTE` and no supervisor lock — both are
+BLOCKED-class by design).
+
+**Test roots:** `tests/` (24 files). Patterns exercised:
+- **Fake subprocess injection** (`tests/_fakes.py::FakeRunner`) — every
+  dispatcher method is exercised with argv + env + clock injection.
+- **Boundary oracles** — `test_status.py::test_headline_stopped_after_5_minutes`
+  pins the staleness boundary exactly (NOW+300s → running, NOW+301s →
+  stopped). Mutation-test oracle: changing `>` to `>=` flips one
+  boundary case to fail.
+- **Property tests** — `tests/test_entry_point_contract.py` generates
+  ~500 random valid (module, callable) pairs per run, asserting
+  parse-then-reserialize identity.
+
+**Out of scope:** real subprocess execution, real network I/O, real
+file-system state across runs.
+
+## V2 — hermetic repository confidence
+
+**Claim:** the institution is wired end-to-end on a hermetic machine
+(no LLM calls, no credentials). All catalog-listed programs have
+their `check_program_script` resolvable and returning exit 0.
+
+**Evidence:** `bash green-gate/check-institution.sh --hermetic` exits
+0 with the message `GREEN INSTITUTION READY`. Sub-checks:
+
+```
+[v0-ruff] ok                                # ruff passes (see V0)
+[engine] ok                                 # mathlint system-readiness via $HOME/.../check-local-system-readiness.sh --skip-external --use-program=self_test-sample
+[supervisor] not on PATH (skipped)          # pi-monitor absent → skip (intentional)
+[program=kaplansky] ok                      # kaplansky's check_program_script exits 0
+```
+
+The aggregator is `green-gate/check-institution.sh`. It reads
+`catalog/programs.toml` and iterates each program, calling its
+declared `check_program_script` with the appropriate mode flag.
+
+## V3 — deep adversarial assurance
+
+**Claim:** the most consequential claims are challenged by independent
+oracles, not just example tests.
+
+**Implemented:**
+- **Entry-point parser property tests** — ~500 synthesized inputs per
+  run, asserting identity + idempotence. Catches off-by-one and
+  whitespace-handling regressions.
+- **Staleness-boundary oracle** — exact 300-second boundary pinned
+  for `read_status_headline`.
+- **Gate-parser defensive default** — `OTHER` task kinds map to OPEN,
+  not CLOSED, with a parametrized test over every `TaskKind` enum
+  member.
+- **Architecture-review argv oracle** — `tests/test_cli.py` asserts
+  the exact argv shape that `research doctor` sends to the green
+  gate, including the hermetic/live flag and `--skip-program=`
+  forwarding.
+
+**Not implemented:**
+- Mutation testing infrastructure (e.g. `mutmut`, `cosmic-ray`). The
+  existing tests are mutation-tested manually (see the
+  verification-audit report); automating this would catch
+  regression-induced survivors at scale.
+- Coverage-guided fuzzing. Not justified by the codebase's
+  combinatorial surface; the property tests cover the meaningful
+  shapes.
+- Concurrency stress. The dispatcher is a thin subprocess wrapper
+  with no shared state; concurrency hazards are absent by design.
+
+## V4 — system / release assurance
+
+**Claim:** the institution is wired on a real operator machine with
+real credentials.
+
+**Operator path:** `MATHLINT_MODEL_ROUTE=openai-codex/<route> bash
+green-gate/check-institution.sh --live` exits 0 when the operator has
+a valid pi auth grant.
+
+**Hermetic path:** the gate accepts two test-mode env vars:
+
+- `RESEARCH_INSTITUTION_HERMETIC=1` — skips the V0 ruff step (use
+  in isolated CI runners where the source tree isn't checked out).
+- `RESEARCH_INSTITUTION_ENGINE_SCRIPT=<path>` — overrides the
+  engine script location (use in tests to substitute a fake engine
+  that delegates to a fake mathlint).
+
+**Hermetic oracles** (run automatically in CI):
+- `test_green_gate_live_with_fake_mathlint` — `--live` succeeds with
+  fake mathlint + fake engine script + fake program dir.
+- `test_green_gate_live_fails_closed_without_credentials` — `--live`
+  fails with `RED:` verdict when `MATHLINT_MODEL_ROUTE` is unset.
+
+These cover the same regression surface as the operator-only
+`test_cold_start_doctor_live_passes_when_credentials_valid` test
+without requiring operator credentials, so a CI runner can exercise
+the live-mode code path every commit.
+
+## Skip / BLOCKED policy
+
+| Status | Meaning | Example |
+|---|---|---|
+| PASS | executed and met its oracle | `ruff check` exits 0 |
+| FAIL | executed and violated its oracle | gate returns `RED:` |
+| BLOCKED | required evidence unobtainable in this run | live gate when `MATHLINT_MODEL_ROUTE` is unset |
+| NOT_RUN | not executed this invocation | V3 mutation tests (manual only) |
+| NOT_APPLICABLE | deliberately excluded | timezone hints (DTZ) — irrelevant to glue code |
+
+`xfail` representing a known unmet requirement **never counts as
+evidence** that the requirement passes.
+
+## Adding new code
+
+When you add a new code path:
+
+1. Add V1 unit tests with a deterministic oracle (fake runner, fake
+   env, fake clock — see `tests/_fakes.py`).
+2. If the path is security-sensitive or destructive, add a property
+   test that exercises the claim with synthesized inputs.
+3. If the path is on the dispatcher's hot path, add a boundary
+   oracle (off-by-one, empty input, max input).
+4. If the path crosses a process boundary (subprocess, network,
+   filesystem), add a hermetic end-to-end test that injects a
+   fake at the boundary, mirroring the live-mode oracles.
+
+When you change the gate semantics:
+
+1. Update `green-gate/check-institution.sh` (the executable truth).
+2. Update this doc (the operator's contract).
+3. Update `tests/test_green_gate_hermetic.py` (the executable test).
+4. Audit `docs/semantic/` for `@INV-NNNN` references that name the
+   affected invariant.
+
+## See also
+
+- `AGENTS.md` — prime directive + cold-start workflow.
+- `docs/operations/research-institution-quickstart.md` — operator's
+  one-pager.
+- `docs/operations/architecture-review-gate.md` — the gate's
+  application-level semantics.
+- `docs/semantic/invariants/inv-0093-*.md` — institution green gate
+  is canonical wiring evidence.

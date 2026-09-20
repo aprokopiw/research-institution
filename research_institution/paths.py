@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 class Environment(Protocol):
@@ -73,7 +73,7 @@ def default_environment() -> Environment:
 # ---------------------------------------------------------------------------
 
 
-def institution_dir(env: Optional[Environment] = None) -> Path:
+def institution_dir(env: Environment | None = None) -> Path:
     """Return the research-institution repo root, or raise if unset.
 
     Resolution order:
@@ -97,6 +97,7 @@ def institution_dir(env: Optional[Environment] = None) -> Path:
         return p
     # Fallback: walk up from cwd looking for the catalog marker.
     import os as _os
+
     cwd = Path(_os.getcwd())
     for candidate in (cwd, *cwd.parents):
         if (candidate / "catalog" / "programs.toml").is_file():
@@ -108,12 +109,69 @@ def institution_dir(env: Optional[Environment] = None) -> Path:
     )
 
 
-def mathlint_vault(env: Optional[Environment] = None) -> Path:
+def mathlint_vault(env: Environment | None = None) -> Path:
     """Default location for the mathlint config the dispatcher uses."""
     return Path("~/.config/mathlint").expanduser()
 
 
-def pi_monitor_config_path(env: Optional[Environment] = None) -> Path:
+def mathlint_local_config_path(env: Environment | None = None) -> Path:
+    """Path to mathlint's main local config (mathlint local.toml).
+
+    Reads MATHLINT_CONFIG if set; otherwise defaults to
+    ``~/.config/mathlint/local.toml``. Per @ADR-0001, this file
+    is the operator's canonical place to declare the live model
+    route (so they don't have to export it per-shell).
+    """
+    e = env or _OsEnviron()
+    raw = e.get("MATHLINT_CONFIG")
+    if raw:
+        return Path(raw)
+    return mathlint_vault(env) / "local.toml"
+
+
+def resolve_model_route(env: Environment | None = None) -> str | None:
+    """Return the live model route the dispatcher should advertise.
+
+    Resolution order (first match wins):
+
+      1. ``MATHLINT_MODEL_ROUTE`` env var (explicit operator override;
+         survives the config file being missing or stale).
+      2. ``model_route`` field of the mathlint local config
+         (``~/.config/mathlint/local.toml`` by default). This is the
+         canonical operator setting per @ADR-0001.
+
+    Returns ``None`` when neither resolves. The dispatcher treats
+    ``None`` as "not configured for live mode" and refuses to launch.
+
+    This function centralizes the policy so callers don't have to
+    re-implement it. A test (see ``tests/test_paths.py``) pins the
+    resolution order + the file-parse failure mode.
+    """
+    import tomllib
+
+    e = env or _OsEnviron()
+    explicit = e.get("MATHLINT_MODEL_ROUTE")
+    # An explicit empty string is treated as 'unset' so callers can
+    # override the local.toml default without unsetting the env var.
+    # This matches the shape that subprocess.run expects (a missing
+    # var is read as None; a present-but-empty var is a deliberate
+    # choice and MUST be respected as-is at lower layers).
+    if explicit is not None:
+        stripped = explicit.strip()
+        return stripped or None
+    cfg = mathlint_local_config_path(e)
+    if cfg.is_file():
+        try:
+            data = tomllib.loads(cfg.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return None
+        route = data.get("model_route")
+        if isinstance(route, str) and route.strip():
+            return route.strip()
+    return None
+
+
+def pi_monitor_config_path(env: Environment | None = None) -> Path:
     """Path to the pi_monitor config the dispatcher uses.
 
     Catalog-driven: each program declares its supervisor config path.
@@ -126,17 +184,17 @@ def pi_monitor_config_path(env: Optional[Environment] = None) -> Path:
     return mathlint_vault(env) / "local-pi-monitor.toml"
 
 
-def catalog_path(env: Optional[Environment] = None) -> Path:
+def catalog_path(env: Environment | None = None) -> Path:
     """Default location for the catalog TOML."""
     return institution_dir(env) / "catalog" / "programs.toml"
 
 
-def green_gate_path(env: Optional[Environment] = None) -> Path:
+def green_gate_path(env: Environment | None = None) -> Path:
     """Path to the canonical green-gate script."""
     return institution_dir(env) / "green-gate" / "check-institution.sh"
 
 
-def pi_monitor_repo(env: Optional[Environment] = None) -> Path:
+def pi_monitor_repo(env: Environment | None = None) -> Path:
     """Path to the pi_monitor repo, for locating `start-*.sh` scripts.
 
     Defaults to `~/Documents/andrei/pi_monitor` per the operator's
@@ -149,12 +207,12 @@ def pi_monitor_repo(env: Optional[Environment] = None) -> Path:
     return Path.home() / "Documents" / "andrei" / "pi_monitor"
 
 
-def pi_monitor_start_script(env: Optional[Environment] = None) -> Path:
+def pi_monitor_start_script(env: Environment | None = None) -> Path:
     """The canonical pi_monitor supervisor start script."""
     return pi_monitor_repo(env) / "start-pi-monitor-pi-monitor.sh"
 
 
-def pi_monitor_state_dir(env: Optional[Environment] = None) -> Path:
+def pi_monitor_state_dir(env: Environment | None = None) -> Path:
     """Directory where the pi_monitor supervisor writes runtime state.
 
     Hardcoded in pi_monitor as ``~/.local/state/mathlint/pi-monitor/``.
@@ -169,7 +227,7 @@ def pi_monitor_state_dir(env: Optional[Environment] = None) -> Path:
     return Path.home() / ".local" / "state" / "mathlint" / "pi-monitor"
 
 
-def agent_skills_dir(env: Optional[Environment] = None) -> Path:
+def agent_skills_dir(env: Environment | None = None) -> Path:
     """The pi agent's skill discovery root (default `~/.pi/agent/skills`)."""
     e = env or _OsEnviron()
     raw = e.get("PI_AGENT_SKILLS_DIR")
@@ -178,7 +236,7 @@ def agent_skills_dir(env: Optional[Environment] = None) -> Path:
     return Path.home() / ".pi" / "agent" / "skills"
 
 
-def missing_credentials(prog, env: Optional[Environment] = None) -> list[str]:
+def missing_credentials(prog, env: Environment | None = None) -> list[str]:
     """Return the list of credential env vars the program requires but
     the environment does not provide.
 
@@ -199,10 +257,12 @@ __all__ = [
     "default_environment",
     "green_gate_path",
     "institution_dir",
+    "mathlint_local_config_path",
     "mathlint_vault",
     "missing_credentials",
     "pi_monitor_config_path",
     "pi_monitor_repo",
     "pi_monitor_start_script",
     "pi_monitor_state_dir",
+    "resolve_model_route",
 ]

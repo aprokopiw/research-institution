@@ -55,7 +55,8 @@ def _imports_of(module_path: pathlib.Path) -> set[str]:
 def _module_imports_of(module_path: pathlib.Path) -> set[str]:
     """Return only the module-level `research_institution.*` imports."""
     return {
-        x for x in _imports_of(module_path)
+        x
+        for x in _imports_of(module_path)
         if "." not in x.split("research_institution.", 1)[-1]
         or x.count(".") == x.replace("research_institution.", "").count(".") + 1
     }
@@ -72,8 +73,7 @@ def test_dispatcher_does_not_depend_on_cli() -> None:
     imports = _imports_of(PKG / "dispatcher.py")
     cli_imports = {x for x in imports if x.startswith("research_institution.cli")}
     assert cli_imports == set(), (
-        f"dispatcher depends on cli modules (RC1 boundary violation): "
-        f"{sorted(cli_imports)}"
+        f"dispatcher depends on cli modules (RC1 boundary violation): {sorted(cli_imports)}"
     )
 
 
@@ -82,8 +82,7 @@ def test_contracts_vocabulary_has_no_internal_deps() -> None:
     imports = _imports_of(PKG / "contracts" / "vocabulary.py")
     internal = {x for x in imports if x.startswith("research_institution")}
     assert internal == set(), (
-        f"vocabulary.py should be a leaf module; found internal deps: "
-        f"{sorted(internal)}"
+        f"vocabulary.py should be a leaf module; found internal deps: {sorted(internal)}"
     )
 
 
@@ -102,7 +101,8 @@ def test_gate_verdict_depends_only_on_vocabulary() -> None:
     # An import X.Y.Z is the module X.Y.Z when Y.Z is the suffix;
     # we accept any import whose prefix is one of the expected modules.
     unexpected = {
-        x for x in imports
+        x
+        for x in imports
         if x.startswith("research_institution")
         and not any(x == m or x.startswith(m + ".") for m in expected_modules)
     }

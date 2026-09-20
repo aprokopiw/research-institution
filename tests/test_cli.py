@@ -44,13 +44,15 @@ def test_stop_delegates_to_mathlint(cli_runner) -> None:
     fighting Typer's stdout capture.
     """
     import os
+
     log = os.environ["FAKE_SHIM_LOG"]
     if os.path.exists(log):
         os.remove(log)
     result = cli_runner.invoke(args=["stop", "kaplansky"], catch_exceptions=False)
     assert result.exit_code == 0
     assert os.path.exists(log), "fake shim was never invoked"
-    body = open(log, encoding="utf-8").read()
+    with open(log, encoding="utf-8") as f:
+        body = f.read()
     assert "research-stop" in body
 
 
@@ -62,12 +64,14 @@ def test_status_verbose_delegates_to_mathlint(cli_runner) -> None:
     subprocess call. With --verbose it delegates to mathlint.
     """
     import os
+
     log = os.environ["FAKE_SHIM_LOG"]
     if os.path.exists(log):
         os.remove(log)
     result = cli_runner.invoke(args=["status", "kaplansky", "--verbose"], catch_exceptions=False)
     assert result.exit_code == 0
-    body = open(log, encoding="utf-8").read()
+    with open(log, encoding="utf-8") as f:
+        body = f.read()
     assert "research-status" in body
 
 
@@ -79,6 +83,7 @@ def test_status_headline_skips_subprocess(cli_runner) -> None:
     (cheap + safe + no LLM). This test pins that contract.
     """
     import os
+
     log = os.environ["FAKE_SHIM_LOG"]
     if os.path.exists(log):
         os.remove(log)
@@ -86,27 +91,78 @@ def test_status_headline_skips_subprocess(cli_runner) -> None:
     # Exit 0 even when no supervisor state exists; the headline
     # gracefully reports `no-supervisor` in that case.
     assert result.exit_code == 0
-    body = open(log, encoding="utf-8").read() if os.path.exists(log) else ""
+    body = ""
+    if os.path.exists(log):
+        with open(log, encoding="utf-8") as f:
+            body = f.read()
     assert "research-status" not in body, (
         f"status without --verbose should not invoke mathlint, but log says: {body!r}"
     )
 
 
-def test_doctor_hermetic_runs_green_gate(cli_runner, repo_root: Path) -> None:
-    """research doctor delegates to green-gate/check-institution.sh --hermetic."""
-    # We can't actually run the green gate in this test env (it would
-    # require the real mathlint installed). Just assert that the
-    # command is invoked. Easier: skip if the gate is missing.
+def test_doctor_hermetic_runs_green_gate(cli_runner, repo_root: Path, monkeypatch) -> None:
+    """research doctor delegates to green-gate/check-institution.sh --hermetic.
+
+    Mutation oracle: a regression that drops `--hermetic` from the argv
+    would silently run the operator-live gate (failing on machines
+    without credentials). The contract pinned here is the exact argv.
+    """
     gate = repo_root / "green-gate" / "check-institution.sh"
     if not gate.is_file():
         pytest.skip("green-gate script not present in this checkout")
-    # The fake mathlint shim exits 0; the green-gate may exit non-zero
-    # depending on the env. We just assert the command ran (exit code
-    # is whatever the gate returns).
+
+    captured: dict = {}
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr("subprocess.call", fake_call)
     result = cli_runner.invoke(args=["doctor"], catch_exceptions=False)
-    # Either the gate ran (exit code anything but 127 = binary missing)
-    # or the gate is not on PATH. We accept both.
-    assert result.exit_code is not None
+    assert result.exit_code == 0
+    argv = captured.get("argv")
+    assert argv is not None, "doctor did not invoke subprocess.call"
+    assert Path(argv[0]) == gate, f"argv[0]={argv[0]!r}; expected {gate}"
+    assert "--hermetic" in argv, f"missing --hermetic flag in argv={argv!r}"
+    assert "--live" not in argv, f"--live flag leaked into hermetic argv={argv!r}"
+
+
+def test_doctor_live_runs_green_gate_with_live_flag(cli_runner, repo_root: Path, monkeypatch) -> None:
+    """research doctor --live delegates with the --live flag (and not --hermetic)."""
+    gate = repo_root / "green-gate" / "check-institution.sh"
+    if not gate.is_file():
+        pytest.skip("green-gate script not present in this checkout")
+
+    captured: dict = {}
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr("subprocess.call", fake_call)
+    result = cli_runner.invoke(args=["doctor", "--live"], catch_exceptions=False)
+    assert result.exit_code == 0
+    argv = captured["argv"]
+    assert "--live" in argv
+    assert "--hermetic" not in argv
+
+
+def test_doctor_skip_program_forwards_flag(cli_runner, repo_root: Path, monkeypatch) -> None:
+    """research doctor --program X forwards --skip-program=X to the gate."""
+    gate = repo_root / "green-gate" / "check-institution.sh"
+    if not gate.is_file():
+        pytest.skip("green-gate script not present in this checkout")
+
+    captured: dict = {}
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr("subprocess.call", fake_call)
+    result = cli_runner.invoke(args=["doctor", "--program", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "--skip-program=kaplansky" in captured["argv"]
 
 
 def test_install_skills_creates_symlinks(cli_runner, tmp_path: Path) -> None:
@@ -140,7 +196,7 @@ def test_start_refuses_duplicate_supervisor(cli_runner, monkeypatch) -> None:
     from research_institution.supervisor import SupervisorState
 
     fake_state = SupervisorState(
-        config_path=Path("/tmp/x.toml"),
+        config_path=Path("/tmp/x.toml"),  # noqa: S108
         supervisor_pid=99999,
         worker_pid=99998,
         is_alive=True,
@@ -174,7 +230,7 @@ def test_start_dry_run_shows_current_state(cli_runner, monkeypatch) -> None:
     from research_institution.supervisor import SupervisorState
 
     fake_state = SupervisorState(
-        config_path=Path("/tmp/x.toml"),
+        config_path=Path("/tmp/x.toml"),  # noqa: S108
         supervisor_pid=43960,
         worker_pid=43963,
         is_alive=True,
@@ -203,6 +259,7 @@ def test_start_autonomous_mode_uses_pi_monitor(cli_runner, monkeypatch) -> None:
     preflight and does NOT produce a paired receipt.
     """
     import os
+
     log = os.environ["FAKE_SHIM_LOG"]
     if os.path.exists(log):
         os.remove(log)

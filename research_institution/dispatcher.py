@@ -50,7 +50,8 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Protocol
+from collections.abc import Callable
 
 from research_institution.catalog import Program
 from research_institution.contracts import GateVerdict, GateVerdictStatus
@@ -105,7 +106,7 @@ class _SystemClock:
         return time.monotonic()
 
 
-def _default_runner(*args: object, **kwargs: object) -> "subprocess.CompletedProcess[str]":
+def _default_runner(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
     """Default subprocess runner. Type-annotated loosely to allow
     test fakes with arbitrary signatures."""
     return subprocess.run(*args, **kwargs)  # type: ignore[arg-type]
@@ -157,7 +158,7 @@ class SubprocessPolicy:
     """
 
     default_timeout_seconds: float = 15.0
-    watch_timeout_seconds: Optional[float] = None
+    watch_timeout_seconds: float | None = None
     inherit_env: bool = True
 
 
@@ -190,8 +191,8 @@ class Dispatcher:
         self,
         prog: Program,
         mathlint_bin: str = "mathlint",
-        cwd: Optional[Path] = None,
-        timeout_seconds: Optional[float] = None,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
     ) -> GateVerdict:
         """Read `mathlint roadmap` and return the architecture-review gate verdict.
 
@@ -226,10 +227,10 @@ class Dispatcher:
     def run_live(
         self,
         mathlint_bin: str = "mathlint",
-        cwd: Optional[Path] = None,
+        cwd: Path | None = None,
         extra_args: Sequence[str] = (),
-        extra_env: Optional[dict[str, str]] = None,
-        timeout_seconds: Optional[float] = None,
+        extra_env: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> SubprocessResult:
         """Invoke `mathlint live-run --confirm-live`.
 
@@ -256,8 +257,8 @@ class Dispatcher:
     def stop_research(
         self,
         mathlint_bin: str = "mathlint",
-        cwd: Optional[Path] = None,
-        timeout_seconds: Optional[float] = None,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
     ) -> SubprocessResult:
         """Invoke `mathlint research-stop`.
 
@@ -279,8 +280,8 @@ class Dispatcher:
     def read_status(
         self,
         mathlint_bin: str = "mathlint",
-        cwd: Optional[Path] = None,
-        timeout_seconds: Optional[float] = None,
+        cwd: Path | None = None,
+        timeout_seconds: float | None = None,
     ) -> SubprocessResult:
         """Invoke `mathlint research-status`.
 
@@ -309,8 +310,8 @@ class Dispatcher:
         start_script: Path,
         pi_monitor_bin: str = "pi-monitor",
         interval_seconds: float = 2.0,
-        extra_env: Optional[dict[str, str]] = None,
-        timeout_seconds: Optional[float] = None,
+        extra_env: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> SubprocessResult:
         """Invoke `pi-monitor watch --config <cfg> --script <script> --interval N`.
 
@@ -345,9 +346,9 @@ class Dispatcher:
     def _run_subprocess(
         self,
         argv: list[str],
-        cwd: Optional[Path] = None,
-        extra_env: Optional[dict[str, str]] = None,
-        timeout_seconds: Optional[float] = None,
+        cwd: Path | None = None,
+        extra_env: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> SubprocessResult:
         """Run one subprocess; return a typed SubprocessResult.
 
@@ -370,6 +371,20 @@ class Dispatcher:
             run_env = dict(extra_env) if extra_env else {}
         if extra_env:
             run_env.update(extra_env)
+        # Auto-inject MATHLINT_MODEL_ROUTE from local.toml when the
+        # caller didn't override it AND we're in inherit_env mode
+        # (per @ADR-0001). Hermetic mode (inherit_env=False) keeps
+        # its strict "no implicit env" contract; the caller can
+        # still set MATHLINT_MODEL_ROUTE explicitly via extra_env.
+        if (
+            self.policy.inherit_env
+            and "MATHLINT_MODEL_ROUTE" not in run_env
+        ):
+            from research_institution.paths import resolve_model_route
+
+            inferred = resolve_model_route(self.environment)
+            if inferred is not None:
+                run_env["MATHLINT_MODEL_ROUTE"] = inferred
 
         kwargs: dict[str, Any] = {
             "capture_output": True,
