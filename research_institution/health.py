@@ -23,6 +23,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from research_institution.contracts import TaskKind
 from research_institution.paths import (
     catalog_path,
     institution_dir,
@@ -225,7 +226,7 @@ def _run_live_preflight() -> HealthCheck:
             suggestion="check that math is installed and on PATH",
         )
     checks: list[PreflightCheckWire] = payload.get("checks") or []
-    failed = [c for c in checks if c.get("status") == "fail"]
+    failed = [c for c in checks if c.status == PreflightCheckStatus.FAIL]
     if not failed:
         return HealthCheck(
             name="live-preflight",
@@ -336,7 +337,7 @@ def _check_architecture_review_gate(program: str) -> HealthCheck:
             summary="no TASK KIND line in roadmap (gate OPEN)",
         )
     kind = m.group(1).strip()
-    if kind == "ARCHITECTURE_REVIEW_REQUIRED":
+    if kind == TaskKind.ARCHITECTURE_REVIEW_REQUIRED:
         return HealthCheck(
             name="architecture-review-gate",
             ok=False,
