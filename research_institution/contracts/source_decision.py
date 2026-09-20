@@ -55,73 +55,83 @@ from pi_monitor.work_envelopes import (
     WorkRequestPayload,
 )
 from pi_monitor.work_source import (
+    CANONICAL_REASON_CODES as _PM_CANONICAL_REASON_CODES,
+    CanonicalReasonCode as PM_CanonicalReasonCode,
+    DecisionKind as PM_DecisionKind,
     Dispatch,
+    OperationKind as PM_OperationKind,
     OperatorRequired,
+    REASON_BLOCKED_WORK_PRESENT,
+    REASON_FRONTIER_EXHAUSTED,
+    REASON_NO_ELIGIBLE_WORK,
+    REASON_OPERATOR_REQUIRED,
+    REASON_STOP_REQUESTED,
+    REASON_WAIT_REQUESTED,
+    REASON_WORK_AVAILABLE,
+    RoleName as PM_RoleName,
+    SourceIdentity as PM_SourceIdentity,
     SourceRevision,
     Stop,
     Wait,
     WorkRequest,
+    WorkspaceName as PM_WorkspaceName,
 )
 
 # ---------------------------------------------------------------------------
-# Stable reason-code vocabulary (mirrored from pi_monitor.work_source).
-# Adapters outside this list are tolerated as opaque strings but these
-# are the documented canonical set.
+# Stable reason-code vocabulary, closed ``kind`` discriminator, and
+# cross-repo wire type aliases — re-exports of pi_monitor's canonical
+# types by identity. Local duplicates were the historical source of
+# drift (a typo at one of two definitions silently desynchronizes the
+# verifier on the other side); the canonical version now lives in
+# ``pi_monitor.work_source`` and this module re-exports the names.
 # ---------------------------------------------------------------------------
 
-REASON_NO_ELIGIBLE_WORK = "no_eligible_work"
-REASON_FRONTIER_EXHAUSTED = "frontier_exhausted"
-REASON_BLOCKED_WORK_PRESENT = "blocked_work_present"
-REASON_WORK_AVAILABLE = "work_available"
-REASON_WAIT_REQUESTED = "wait_requested"
-REASON_OPERATOR_REQUIRED = "operator_required"
-REASON_STOP_REQUESTED = "stop_requested"
+#: Re-export of the closed canonical reason-code set. ``frozenset[Literal[...]]``
+#: is structurally compatible with ``frozenset[str]`` so downstream code
+#: that annotated against the legacy type still typechecks.
+CANONICAL_REASON_CODES: frozenset[str] = _PM_CANONICAL_REASON_CODES
 
-CANONICAL_REASON_CODES: frozenset[str] = frozenset(
-    {
-        REASON_NO_ELIGIBLE_WORK,
-        REASON_FRONTIER_EXHAUSTED,
-        REASON_BLOCKED_WORK_PRESENT,
-        REASON_WORK_AVAILABLE,
-        REASON_WAIT_REQUESTED,
-        REASON_OPERATOR_REQUIRED,
-        REASON_STOP_REQUESTED,
-    }
-)
+#: Closed reason-code vocabulary as a Literal type. Re-export of
+#: :data:`pi_monitor.work_source.CanonicalReasonCode` so the strict
+#: pyright config turns unknown reason_codes into a compile-time
+#: error at any call site that declares ``reason_code: CanonicalReasonCode``.
+CanonicalReasonCode = PM_CanonicalReasonCode
 
-#: Closed reason-code vocabulary as a Literal type. The strict
-#: pyright config in pyproject.toml turns unknown reason_codes into
-#: a compile-time error at any call site that declares
-#: ``reason_code: ReasonCodeLiteral``.
-ReasonCodeLiteral: TypeAlias = Literal[
-    "no_eligible_work",
-    "frontier_exhausted",
-    "blocked_work_present",
-    "work_available",
-    "wait_requested",
-    "operator_required",
-    "stop_requested",
-]
+#: ``kind`` discriminator StrEnum. Re-export of
+#: :class:`pi_monitor.work_source.DecisionKind`. This is the
+#: canonical type for the envelope ``kind`` field; pi_monitor emits
+#: ``DecisionKind.DISPATCH.value`` and ri reads ``decision.kind ==
+#: DecisionKind.DISPATCH`` (both reference the same enum identity).
+DecisionKind = PM_DecisionKind
+
+#: Cross-repo wire type aliases for WorkRequest's string-typed fields.
+#: Re-exports of the canonical Literal types from pi_monitor.
+OperationKind = PM_OperationKind
+RoleName = PM_RoleName
+SourceIdentity = PM_SourceIdentity
+WorkspaceName = PM_WorkspaceName
 
 
-class DecisionKind(StrEnum):
-    """The `kind` discriminator in a source-decision envelope.
+# ---------------------------------------------------------------------------
+# The four decision variants — re-exports of pi_monitor's frozen
+# dataclasses. See module docstring for why we re-export rather
+# than mirror.
+# ---------------------------------------------------------------------------
 
-    Mirrors pi_monitor.work_source.KIND_* constants.
-    """
+#: The tagged union of the four decision variants. A
+#: ``WorkSourceProvider.__call__`` always returns one of these.
+SourceDecision: TypeAlias = Dispatch | Wait | OperatorRequired | Stop
 
-    DISPATCH = "dispatch"
-    WAIT = "wait"
-    OPERATOR_REQUIRED = "operator_required"
-    STOP = "stop"
-    UNKNOWN = "UNKNOWN"  # defensive default for unrecognized values
+#: Back-compat alias for the legacy :data:`ReasonCodeLiteral` name.
+#: Some external importers still reference the old name; prefer
+#: :data:`CanonicalReasonCode` for new code.
+ReasonCodeLiteral = PM_CanonicalReasonCode
 
-
-#: Closed ``kind`` discriminator as a Literal type. Use this for
-#: write-side paths that declare the envelope shape statically.
-DecisionKindLiteral: TypeAlias = Literal[
-    "dispatch", "wait", "operator_required", "stop"
-]
+#: Back-compat alias for the legacy :data:`DecisionKindLiteral` name.
+#: The current canonical type is the :class:`DecisionKind` StrEnum
+#: which carries the wire-string identity as ``.value``; this alias
+#: keeps ``kind: DecisionKindLiteral`` annotations working.
+DecisionKindLiteral: TypeAlias = Literal["dispatch", "wait", "operator_required", "stop"]
 
 
 # ---------------------------------------------------------------------------
