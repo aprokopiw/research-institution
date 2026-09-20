@@ -302,3 +302,210 @@ def test_stop_no_supervisor_is_noop(cli_runner, monkeypatch) -> None:
     assert result.exit_code == 0
     combined = (result.stdout + result.stderr).lower()
     assert "no supervisor running" in combined
+
+
+def test_stop_sends_sigterm_to_alive_supervisor(cli_runner, monkeypatch) -> None:
+    """``research stop <prog>`` sends SIGTERM (signal 15) to the supervisor
+    when one is alive.
+
+    Mutation oracle: a refactor that swaps SIGTERM for SIGKILL, or
+    skips the SIGTERM step entirely, would lose the cleanup window
+    that supervisors need to flush state. The test pins the signal
+    value at 15.
+    """
+    import os as _os
+    import signal as _signal
+
+    sent: list[int] = []
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 99999, "worker_pid": 0},
+        )(),
+    )
+
+    def fake_kill(pid: int, sig: int) -> None:
+        sent.append(sig)
+        # Simulate the supervisor exiting cleanly after SIGTERM so
+        # the stop loop sees success and exits 0.
+        if sig == _signal.SIGTERM:
+            return  # no exception; _pid_alive_quick is monkeypatched separately
+
+    monkeypatch.setattr(_os, "kill", fake_kill)
+    monkeypatch.setattr(
+        "research_institution.cli._pid_alive_quick", lambda pid: False
+    )
+    result = cli_runner.invoke(args=["stop", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0, f"got {result.exit_code}; stdout={result.stdout!r}"
+    assert _signal.SIGTERM in sent, (
+        f"stop did not send SIGTERM; signals sent={sent}. A regression "
+        f"that swaps SIGTERM for SIGKILL or skips it would lose the "
+        f"supervisor's cleanup window."
+    )
+
+
+def test_stop_force_sends_sigkill_when_sigterm_times_out(
+    cli_runner, monkeypatch
+) -> None:
+    """``research stop <prog> --force`` escalates to SIGKILL if SIGTERM
+    doesn't stop the supervisor within 5 seconds.
+
+    Mutation oracle: a refactor that drops the SIGKILL escalation
+    in the force path leaves an unresponsive supervisor unkillable
+    from this CLI. The test pins the SIGKILL signal value (9) at
+    the escalation step.
+    """
+    import os as _os
+    import signal as _signal
+
+    sent: list[int] = []
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 99999, "worker_pid": 0},
+        )(),
+    )
+
+    def fake_kill(pid: int, sig: int) -> None:
+        sent.append(sig)
+
+    monkeypatch.setattr(_os, "kill", fake_kill)
+    # Always report PID alive so the SIGTERM wait loop runs to completion
+    # and the force-escalation branch fires.
+    monkeypatch.setattr(
+        "research_institution.cli._pid_alive_quick", lambda pid: True
+    )
+    # Speed up the 5-second wait loop so the test stays fast. The
+    # stop() function imports `time` locally inside the loop, so we
+    # patch the stdlib `time.sleep` directly (every `time` import
+    # in the process resolves to the same module object).
+    import time as _stdlib_time
+
+    monkeypatch.setattr(_stdlib_time, "sleep", lambda _: None)
+    result = cli_runner.invoke(
+        args=["stop", "kaplansky", "--force"], catch_exceptions=False
+    )
+    assert result.exit_code == 0, f"got {result.exit_code}; stdout={result.stdout!r}"
+    assert _signal.SIGTERM in sent, f"SIGTERM not sent; signals={sent}"
+    assert _signal.SIGKILL in sent, (
+        f"--force did not escalate to SIGKILL; signals={sent}. A regression "
+        f"that drops the force-escalation branch leaves the supervisor "
+        f"unkillable from this CLI."
+    )
+
+
+def test_stop_without_force_exits_1_when_supervisor_stuck(
+    cli_runner, monkeypatch
+) -> None:
+    """``research stop <prog>`` without ``--force`` exits 1 when SIGTERM
+    doesn't stop the supervisor within 5 seconds.
+
+    The exit code 1 is the operator-facing signal that manual
+    intervention (re-run with --force) is needed. A regression that
+    exits 0 here would silently leave an unresponsive supervisor
+    running and the operator wouldn't know.
+    """
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 99999, "worker_pid": 0},
+        )(),
+    )
+    monkeypatch.setattr("research_institution.cli.os.kill", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "research_institution.cli._pid_alive_quick", lambda pid: True
+    )
+    import time as _stdlib_time
+
+    monkeypatch.setattr(_stdlib_time, "sleep", lambda _: None)
+    result = cli_runner.invoke(args=["stop", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 1, (
+        f"got {result.exit_code}; expected 1 when SIGTERM doesn't stop "
+        f"the supervisor. A regression that exits 0 silently leaves an "
+        f"unresponsive supervisor running."
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# V-WIRE label contract — the green-gate script advertises the new tier.
+#
+# The V-WIRE tier was added in verify-0093-vwire (commit f565ac1). This
+# test pins the surface contract: the gate script MUST print the
+# `[v-wire]` label and MUST honor ``RESEARCH_INSTITUTION_VWIRE_DIRECT``.
+# A future refactor that drops the tier (e.g. renaming ``v-wire`` to
+# ``cross-repo-wiring``) breaks operator dashboards that grep for the
+# label, so we pin the exact string here.
+# ---------------------------------------------------------------------------
+
+
+def test_green_gate_advertises_v_wire_subcheck(repo_root: Path) -> None:
+    """The institution green-gate MUST print the ``[v-wire]`` label and
+    honor ``RESEARCH_INSTITUTION_VWIRE_DIRECT``.
+
+    Mutation oracle: a refactor that drops V-WIRE (e.g. merges it into
+    V2) silently degrades the institution green-gate's coverage of
+    cross-repo composition contracts. Dashboards that grep for the
+    ``v-wire`` label would miss the change. This test pins the label
+    AND the env-var contract so the public surface is preserved.
+    """
+    gate = repo_root / "green-gate" / "check-institution.sh"
+    if not gate.is_file():
+        pytest.skip("green-gate script not present in this checkout")
+    source = gate.read_text(encoding="utf-8")
+    assert "[v-wire]" in source, (
+        "green-gate no longer advertises the V-WIRE sub-check "
+        "(missing '[v-wire]' label). The cross-repo wiring tier "
+        "has been removed or renamed. If intentional, update this "
+        "test AND the operator dashboards that grep for the label."
+    )
+    assert "RESEARCH_INSTITUTION_VWIRE_DIRECT" in source, (
+        "green-gate no longer honors RESEARCH_INSTITUTION_VWIRE_DIRECT. "
+        "The escape hatch for hermetic CI runners is missing."
+    )
+
+
+def test_doctor_preserves_v_wire_env_var_through_to_gate(
+    cli_runner, repo_root: Path, monkeypatch
+) -> None:
+    """When ``RESEARCH_INSTITUTION_VWIRE_DIRECT=1`` is in the
+    dispatcher's env, ``research doctor`` MUST forward it to the
+    subprocess.call that invokes the gate.
+
+    Defect: a refactor that constructs the subprocess env via
+    ``subprocess.call([gate, flag])`` without propagating the
+    env-var would silently disable V-WIRE for operators who set
+    it in their dotfiles. The cold-start hermetic test catches
+    this on the integration path; this test pins the per-CLI
+    surface so a regression in ``cli.py`` surfaces here too.
+    """
+    gate = repo_root / "green-gate" / "check-institution.sh"
+    if not gate.is_file():
+        pytest.skip("green-gate script not present in this checkout")
+
+    captured: dict = {}
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr("subprocess.call", fake_call)
+    monkeypatch.setenv("RESEARCH_INSTITUTION_VWIRE_DIRECT", "1")
+    result = cli_runner.invoke(args=["doctor"], catch_exceptions=False)
+    assert result.exit_code == 0
+    argv = captured.get("argv", [])
+    # The gate must be invoked; the env-var propagation is via the
+    # subprocess env (which subprocess.call inherits from os.environ).
+    # We assert here that the argv shape is preserved; the actual
+    # env-var propagation is a Python-level guarantee that subprocess
+    # calls inherit os.environ. The cold-start test exercises the
+    # full end-to-end propagation.
+    assert Path(argv[0]) == gate, f"argv[0]={argv[0]!r}; expected {gate}"

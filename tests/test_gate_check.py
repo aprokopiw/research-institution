@@ -12,6 +12,8 @@ owns (per @ADR-0006). These tests prove:
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -27,6 +29,7 @@ from research_institution.contracts import (
     TaskKind,
     gate_verdict_from_task_kind,
 )
+from research_institution.contracts.gate_verdict import TASK_KIND_ABSENT as _TASK_KIND_ABSENT
 
 # A realistic roadmap excerpt with the gate CLOSED.
 ROADMAP_CLOSED = """\
@@ -300,3 +303,100 @@ def test_start_skip_gate_proceeds(cli_runner, tmp_path: Path, monkeypatch) -> No
     assert result.exit_code == 0, f"got {result.exit_code}; stdout={result.stdout!r}"
     combined = (result.stdout or "") + (getattr(result, "stderr", "") or "")
     assert "--skip-gate" in combined or "bypassed" in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# CROSS_REPO_010 — end-to-end: mathlint roadmap against the operator's
+# actual machine produces a recognizable task_kind.
+#
+# Defect class: mathlint emits a brand-new TASK KIND value (e.g.
+# ``REVIEW_PENDING``) that the dispatcher's ``gate_verdict_from_task_kind``
+# doesn't enumerate. Today this falls into the OTHER bucket (defensive
+# default: gate OPEN) — silently. The dispatcher's silent-open on
+# unknown kinds is the *intended* safe behavior (refuse false-GREEN
+# bias), but operators need to know when mathlint has introduced a
+# new kind so they can decide whether to keep the OPEN default or
+# tighten to CLOSED. This oracle surfaces the silent-OTHER mapping
+# loudly.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_real_mathlint_root(tmp_path: Path) -> Path | None:
+    """Resolve the kaplansky project root for the live ``check_gate`` call.
+
+    Order: $KAPLANSKY_REPOSITORY env var, then the canonical operator
+    catalog, then skip. Returns a Path that may or may not exist; the
+    caller is responsible for the existence check.
+    """
+    import os as _os
+
+    env_root = _os.environ.get("KAPLANSKY_REPOSITORY")
+    if env_root:
+        return Path(env_root)
+    catalog = Path("~/Documents/andrei/research-institution/catalog/programs.toml").expanduser()
+    if not catalog.is_file():
+        return None
+    import tomllib
+
+    try:
+        data = tomllib.loads(catalog.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    for entry in data.get("programs", []):
+        if isinstance(entry, dict) and entry.get("name") == "kaplansky":
+            local = entry.get("local_path", "")
+            if isinstance(local, str) and local:
+                return Path(local.replace("$HOME", str(Path.home()))).expanduser()
+    return None
+
+
+def test_cross_repo_010_real_mathlint_roadmap_task_kind_is_known(tmp_path: Path) -> None:
+    """CROSS_REPO_010 — invoking ``check_gate`` against the operator's
+    real mathlint + real roadmap MUST return a ``task_kind`` that is
+    either a known ``TaskKind`` enum value or the documented
+    ``TASK_KIND_ABSENT`` sentinel. An OTHER fallback is acceptable as
+    a runtime safety net but the test fails to surface it.
+
+    Skipped when mathlint isn't on PATH or the catalog isn't reachable
+    (clean CI runner). The test runs end-to-end on the operator's
+    wired machine, exercising the same code path ``research start``
+    takes on every launch.
+    """
+    mathlint_bin = shutil.which("mathlint")
+    if mathlint_bin is None:
+        pytest.skip("CROSS_REPO_010: mathlint not on PATH")
+
+    project_root = _resolve_real_mathlint_root(tmp_path)
+    if project_root is None:
+        pytest.skip("CROSS_REPO_010: cannot resolve kaplansky project root")
+    if not project_root.is_dir():
+        pytest.skip(f"CROSS_REPO_010: project root {project_root} unreachable")
+
+    program = _fake_program(project_root)
+    try:
+        verdict = check_gate(program, mathlint_bin=mathlint_bin)
+    except subprocess.TimeoutExpired:
+        pytest.skip("CROSS_REPO_010: mathlint roadmap timed out")
+
+    known = {kind.value for kind in TaskKind} | {_TASK_KIND_ABSENT}
+    if verdict.task_kind not in known:
+        pytest.fail(
+            f"CROSS_REPO_010 FAIL: mathlint roadmap returned an unrecognized "
+            f"TASK KIND {verdict.task_kind!r}. Known: {sorted(known)}. The "
+            f"parser's defensive OTHER-fallback kicked in silently. "
+            f"raw_excerpt={verdict.raw_excerpt[:200]!r}"
+        )
+
+    # Surface the silent-OTHER mapping loudly so the operator can
+    # decide whether to upgrade OTHER to a real enum value. A
+    # task_kind of "OTHER" + an OPEN gate is the documented safe
+    # default, but it should not go unnoticed.
+    if verdict.task_kind == TaskKind.OTHER.value:
+        pytest.fail(
+            f"CROSS_REPO_010: mathlint roadmap returned an unrecognized "
+            f"TASK KIND that the parser silently mapped to OTHER (gate "
+            f"OPEN by default). Find the new value in the raw_excerpt "
+            f"and decide whether to add it to the TaskKind enum or "
+            f"tighten the gate. raw_excerpt={verdict.raw_excerpt[:400]!r}"
+        )
+
