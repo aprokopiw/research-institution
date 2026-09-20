@@ -43,7 +43,9 @@ typed envelopes through the wire boundary.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, TypeAlias, TypedDict, cast
+from typing import Any, Literal, TypeAlias, cast
+
+from pydantic import BaseModel, ConfigDict
 
 from pi_monitor.work_envelopes import (
     BudgetPolicy as WorkRequestBudgetPolicy,
@@ -146,71 +148,89 @@ SourceDecision: TypeAlias = Dispatch | Wait | OperatorRequired | Stop
 
 
 # ---------------------------------------------------------------------------
-# Wire shape — TypedDicts so ``source_decision_to_wire`` returns a
-# concrete type instead of ``dict[str, Any]``. Optional fields use
-# ``NotRequired``; required fields are typed by their concrete kind.
+# Wire shape — Pydantic models so ``source_decision_to_wire`` returns a
+# concrete type instead of ``dict[str, Any]``. ``extra="allow"`` keeps
+# forward-compat (a future source may add a new field). The five
+# opaque policy dicts (``payload`` / ``execution_policy`` / ...)
+# stay ``dict[str, Any]`` at the wire layer because their typed
+# shape is the Pydantic models in :mod:`pi_monitor.work_envelopes`
+# (the boundary is :func:`parse_work_request_envelopes`).
 # ---------------------------------------------------------------------------
 
 
-class SourceRevisionWireDict(TypedDict):
-    """Wire shape of :class:`pi_monitor.work_source.SourceRevision`."""
+class SourceRevisionWireDict(BaseModel):
+    """Wire shape of :class:`pi_monitor.work_source.SourceRevision`.
 
-    fingerprint: str
-    observed_unix: float
-    label: str
+    ``fingerprint`` and ``observed_unix`` are technically required
+    by the wire contract; ``observed_unix`` defaults to ``0.0``
+    so a malformed envelope with no timestamp surfaces as a
+    missing-``fingerprint``/unknown-``kind`` error at the parse
+    layer rather than a numeric-mismatch error in Pydantic.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    fingerprint: str = ""
+    observed_unix: float = 0.0
+    label: str = ""
 
 
-class WorkRequestWireDict(TypedDict, total=False):
+class WorkRequestWireDict(BaseModel):
     """Wire shape of :class:`pi_monitor.work_source.WorkRequest`.
 
     All optional fields default to ``"default"`` (role/workspace) or
-    ``None`` on the typed side; on the wire they are omitted.
+    ``None`` on the typed side; on the wire they are omitted via
+    ``model_dump(exclude_none=True, exclude_unset=True)`` at the
+    serialization site.
 
     The five opaque fields (``payload`` / ``execution_policy`` /
     ``session_policy`` / ``isolation`` / ``budget``) are source-
     owned: their typed shapes are Pydantic models in
     :mod:`pi_monitor.work_envelopes`. The wire-format JSON is
     ``dict[str, Any]``; the typed shape is one ``.model_validate()``
-    away. See :func:`parse_work_request_wire` for the single
+    away. See :func:`parse_work_request_envelopes` for the single
     boundary that produces a typed :class:`WorkRequest`.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     source_identity: str
     source_revision: SourceRevisionWireDict
     operation_id: str
     operation_kind: str
-    role: str
-    workspace: str
-    payload: dict[str, Any]
-    execution_policy: dict[str, Any]
-    session_policy: dict[str, Any]
-    isolation: dict[str, Any]
-    budget: dict[str, Any]
-    execution_profile: str
-    lease_until_unix: float
+    role: str = "default"
+    workspace: str = "default"
+    payload: dict[str, Any] = {}
+    execution_policy: dict[str, Any] = {}
+    session_policy: dict[str, Any] = {}
+    isolation: dict[str, Any] = {}
+    budget: dict[str, Any] = {}
+    execution_profile: str = ""
+    lease_until_unix: float | None = None
 
 
-#: Wire shape of a single decision envelope (all four variants). The
-#: ``kind`` field is the discriminator. Variant-specific optional
-#: fields are declared NotRequired so writers can omit them when
-#: not applicable, and readers can narrow via ``kind`` checks.
-class SourceDecisionWireDict(TypedDict, total=False):
+class SourceDecisionWireDict(BaseModel):
     """Wire shape of the four-decision-variant discriminated envelope.
 
     All variant-specific fields are optional. Callers narrow by
-    inspecting the ``kind`` field first.
+    inspecting the ``kind`` field first (the canonical
+    :class:`DecisionKind` StrEnum is the discriminator — the
+    string form is also accepted at parse time via Pydantic's
+    coercion).
     """
 
-    kind: DecisionKindLiteral
-    source_revision: SourceRevisionWireDict
-    decided_unix: float
-    reason_code: ReasonCodeLiteral
-    reason: str
-    work: list[WorkRequestWireDict]
-    wake_on_source_change: bool
-    retry_after_seconds: float
-    until_unix: float
-    payload: dict[str, Any]
+    model_config = ConfigDict(extra="allow")
+
+    kind: str | None = None
+    source_revision: SourceRevisionWireDict | None = None
+    decided_unix: float | None = None
+    reason_code: str | None = None
+    reason: str | None = None
+    work: list[WorkRequestWireDict] | None = None
+    wake_on_source_change: bool | None = None
+    retry_after_seconds: float | None = None
+    until_unix: float | None = None
+    payload: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +246,7 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
     place. Constitution Principle VII.
     """
     rev = decision.source_revision
-    rev_dict = SourceRevisionWireDict(
+    rev_model = SourceRevisionWireDict(
         fingerprint=rev.fingerprint,
         observed_unix=rev.observed_unix,
         label=rev.label,
@@ -234,38 +254,32 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
     kind = decision_kind(decision)
     if kind is DecisionKind.DISPATCH:
         dispatch = cast("Dispatch", decision)
-        result = SourceDecisionWireDict(
-            kind="dispatch",
-            source_revision=rev_dict,
+        return SourceDecisionWireDict(
+            kind=kind.value,
+            source_revision=rev_model,
             decided_unix=dispatch.decided_unix,
             reason_code=cast("ReasonCodeLiteral", dispatch.reason_code),
             reason=dispatch.reason,
             work=[_work_request_to_wire(w) for w in dispatch.work],
         )
-        return result
     if kind is DecisionKind.WAIT:
         wait = cast("Wait", decision)
-        result = SourceDecisionWireDict(
-            kind="wait",
-            source_revision=rev_dict,
+        return SourceDecisionWireDict(
+            kind=kind.value,
+            source_revision=rev_model,
             decided_unix=wait.decided_unix,
             reason_code=cast("ReasonCodeLiteral", wait.reason_code),
             reason=wait.reason,
+            wake_on_source_change=wait.wake_on_source_change,
+            retry_after_seconds=wait.retry_after_seconds,
+            until_unix=wait.until_unix,
+            payload=dict(wait.payload) if wait.payload else None,
         )
-        if wait.wake_on_source_change:
-            result["wake_on_source_change"] = True
-        if wait.retry_after_seconds is not None:
-            result["retry_after_seconds"] = wait.retry_after_seconds
-        if wait.until_unix is not None:
-            result["until_unix"] = wait.until_unix
-        if wait.payload:
-            result["payload"] = dict(wait.payload)
-        return result
     if kind is DecisionKind.OPERATOR_REQUIRED:
         op = cast("OperatorRequired", decision)
         return SourceDecisionWireDict(
-            kind="operator_required",
-            source_revision=rev_dict,
+            kind=kind.value,
+            source_revision=rev_model,
             decided_unix=op.decided_unix,
             reason_code=cast("ReasonCodeLiteral", op.reason_code),
             reason=op.reason,
@@ -273,8 +287,8 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
     # DecisionKind.STOP — narrowing by elimination.
     stop = cast("Stop", decision)
     return SourceDecisionWireDict(
-        kind="stop",
-        source_revision=rev_dict,
+        kind=kind.value,
+        source_revision=rev_model,
         decided_unix=stop.decided_unix,
         reason_code=cast("ReasonCodeLiteral", stop.reason_code),
         reason=stop.reason,
@@ -282,36 +296,33 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
 
 
 def _work_request_to_wire(req: WorkRequest) -> WorkRequestWireDict:
-    """Serialize one ``WorkRequest`` to its wire-dict shape."""
-    result: WorkRequestWireDict = {
-        "source_identity": req.source_identity,
-        "source_revision": {
-            "fingerprint": req.source_revision.fingerprint,
-            "observed_unix": req.source_revision.observed_unix,
-            "label": req.source_revision.label,
-        },
-        "operation_id": req.operation_id,
-        "operation_kind": req.operation_kind,
-    }
-    if req.role != "default":
-        result["role"] = req.role
-    if req.workspace != "default":
-        result["workspace"] = req.workspace
-    if req.payload:
-        result["payload"] = dict(req.payload)
-    if req.execution_policy:
-        result["execution_policy"] = dict(req.execution_policy)
-    if req.session_policy:
-        result["session_policy"] = dict(req.session_policy)
-    if req.isolation:
-        result["isolation"] = dict(req.isolation)
-    if req.budget:
-        result["budget"] = dict(req.budget)
-    if req.execution_profile:
-        result["execution_profile"] = req.execution_profile
-    if req.lease_until_unix is not None:
-        result["lease_until_unix"] = req.lease_until_unix
-    return result
+    """Serialize one ``WorkRequest`` to its wire-dict shape.
+
+    Constructs a typed Pydantic ``WorkRequestWireDict`` directly.
+    Empty / default fields are still emitted as their default
+    values (``"default"``, ``""``, ``{}``) at the typed layer
+    and then stripped at the JSON boundary if the consumer wants
+    a compact form via ``model_dump(exclude_unset=True)``.
+    """
+    return WorkRequestWireDict(
+        source_identity=req.source_identity,
+        source_revision=SourceRevisionWireDict(
+            fingerprint=req.source_revision.fingerprint,
+            observed_unix=req.source_revision.observed_unix,
+            label=req.source_revision.label,
+        ),
+        operation_id=req.operation_id,
+        operation_kind=req.operation_kind,
+        role=req.role,
+        workspace=req.workspace,
+        payload=dict(req.payload),
+        execution_policy=dict(req.execution_policy),
+        session_policy=dict(req.session_policy),
+        isolation=dict(req.isolation),
+        budget=dict(req.budget),
+        execution_profile=req.execution_profile,
+        lease_until_unix=req.lease_until_unix,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +339,14 @@ def parse_source_decision(envelope: dict[str, Any]) -> SourceDecision:
     never silently swallow a malformed envelope; that's what
     defensive parsing is for, but in THIS layer we want a loud
     failure to surface a contract change to its maintainer).
+
+    Validates through the typed Pydantic wire model first so
+    required fields (e.g. ``source_revision.fingerprint``) fail
+    fast at the wire boundary; the legacy per-field manual
+    coercion is replaced by ``model_validate``.
     """
-    raw_kind = envelope.get("kind", "")
+    typed = SourceDecisionWireDict.model_validate(envelope)
+    raw_kind = typed.kind or ""
     try:
         kind = DecisionKind(raw_kind)
     except ValueError as exc:
@@ -337,71 +354,85 @@ def parse_source_decision(envelope: dict[str, Any]) -> SourceDecision:
             f"unknown source-decision kind: {raw_kind!r} "
             f"(known: {[k.value for k in DecisionKind if k != DecisionKind.UNKNOWN]})"
         ) from exc
-    rev_dict = envelope.get("source_revision", {})
-    rev = SourceRevision(
-        fingerprint=rev_dict.get("fingerprint", ""),
-        observed_unix=float(rev_dict.get("observed_unix", 0.0)),
-        label=rev_dict.get("label", ""),
-    )
-    decided_unix = float(envelope.get("decided_unix", 0.0))
+    if typed.source_revision is None:
+        # The legacy parser tolerated a missing source_revision
+        # (defaulted to an empty ``SourceRevision``); preserve that
+        # for back-compat. New envelopes must always carry one;
+        # absence is a wire-format drift to flag at the dispatcher.
+        rev = SourceRevision(fingerprint="", observed_unix=0.0, label="")
+    else:
+        rev = SourceRevision(
+            fingerprint=typed.source_revision.fingerprint,
+            observed_unix=typed.source_revision.observed_unix,
+            label=typed.source_revision.label,
+        )
+    decided_unix = typed.decided_unix if typed.decided_unix is not None else 0.0
     if kind == DecisionKind.DISPATCH:
         return Dispatch(
             source_revision=rev,
             decided_unix=decided_unix,
-            work=[_parse_work_request(w) for w in envelope.get("work", [])],
-            reason_code=envelope.get("reason_code", REASON_WORK_AVAILABLE),
-            reason=envelope.get("reason", ""),
+            work=[
+                _parse_work_request(w.model_dump())
+                for w in (typed.work or [])
+            ],
+            reason_code=typed.reason_code or REASON_WORK_AVAILABLE,
+            reason=typed.reason or "",
         )
     if kind == DecisionKind.WAIT:
         return Wait(
             source_revision=rev,
             decided_unix=decided_unix,
-            reason_code=envelope.get("reason_code", REASON_WAIT_REQUESTED),
-            reason=envelope.get("reason", ""),
-            wake_on_source_change=bool(envelope.get("wake_on_source_change", False)),
-            retry_after_seconds=envelope.get("retry_after_seconds"),
-            until_unix=envelope.get("until_unix"),
-            payload=envelope.get("payload", {}),
+            reason_code=typed.reason_code or REASON_WAIT_REQUESTED,
+            reason=typed.reason or "",
+            wake_on_source_change=bool(typed.wake_on_source_change),
+            retry_after_seconds=typed.retry_after_seconds,
+            until_unix=typed.until_unix,
+            payload=typed.payload or {},
         )
     if kind == DecisionKind.OPERATOR_REQUIRED:
         return OperatorRequired(
             source_revision=rev,
             decided_unix=decided_unix,
-            reason_code=envelope.get("reason_code", REASON_OPERATOR_REQUIRED),
-            reason=envelope.get("reason", ""),
+            reason_code=typed.reason_code or REASON_OPERATOR_REQUIRED,
+            reason=typed.reason or "",
         )
     if kind == DecisionKind.STOP:
         return Stop(
             source_revision=rev,
             decided_unix=decided_unix,
-            reason_code=envelope.get("reason_code", REASON_STOP_REQUESTED),
-            reason=envelope.get("reason", ""),
+            reason_code=typed.reason_code or REASON_STOP_REQUESTED,
+            reason=typed.reason or "",
         )
     raise ValueError(f"unreachable: DecisionKind={kind!r}")
 
 
 def _parse_work_request(raw: dict[str, Any]) -> WorkRequest:
-    """Parse one WorkRequest dict from a source-decision envelope."""
-    rev_dict = raw.get("source_revision", {})
-    rev = SourceRevision(
-        fingerprint=rev_dict.get("fingerprint", ""),
-        observed_unix=float(rev_dict.get("observed_unix", 0.0)),
-        label=rev_dict.get("label", ""),
-    )
+    """Parse one WorkRequest dict from a source-decision envelope.
+
+    Validates through the typed Pydantic ``WorkRequestWireDict``
+    so a malformed required field (missing ``source_identity`` /
+    ``operation_id`` / ``source_revision``) fails fast at the
+    parse boundary instead of at a downstream consumer.
+    """
+    typed = WorkRequestWireDict.model_validate(raw)
     return WorkRequest(
-        source_identity=raw["source_identity"],
-        source_revision=rev,
-        operation_id=raw["operation_id"],
-        operation_kind=raw["operation_kind"],
-        role=raw.get("role", "default"),
-        workspace=raw.get("workspace", "default"),
-        payload=raw.get("payload", {}),
-        execution_policy=raw.get("execution_policy", {}),
-        session_policy=raw.get("session_policy", {}),
-        isolation=raw.get("isolation", {}),
-        budget=raw.get("budget", {}),
-        execution_profile=raw.get("execution_profile", ""),
-        lease_until_unix=raw.get("lease_until_unix"),
+        source_identity=typed.source_identity,
+        source_revision=SourceRevision(
+            fingerprint=typed.source_revision.fingerprint,
+            observed_unix=typed.source_revision.observed_unix,
+            label=typed.source_revision.label,
+        ),
+        operation_id=typed.operation_id,
+        operation_kind=typed.operation_kind,
+        role=typed.role,
+        workspace=typed.workspace,
+        payload=dict(typed.payload),
+        execution_policy=dict(typed.execution_policy),
+        session_policy=dict(typed.session_policy),
+        isolation=dict(typed.isolation),
+        budget=dict(typed.budget),
+        execution_profile=typed.execution_profile,
+        lease_until_unix=typed.lease_until_unix,
     )
 
 

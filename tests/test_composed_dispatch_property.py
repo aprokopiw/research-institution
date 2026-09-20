@@ -93,14 +93,14 @@ def test_composed_os_provider_to_wire_to_typed() -> None:
 
     # Wire-shape round-trip.
     wire = source_decision_to_wire(envelope)
-    assert wire["kind"] == "wait"
-    assert "work" not in wire, (
+    assert wire.kind == "wait"
+    assert "work" not in wire.model_dump(exclude_none=True), (
         "Wait envelopes must NOT carry a work key (pi-monitor wire v1 "
         "rejects Wait envelopes with extra fields)"
     )
 
     # Parse back.
-    parsed = parse_source_decision(wire)
+    parsed = parse_source_decision(wire.model_dump(exclude_none=True))
     assert isinstance(parsed, Wait)
     assert decision_kind(parsed) is DecisionKind.WAIT
 
@@ -321,7 +321,7 @@ def test_wire_dict_has_no_extra_fields(decision: SourceDecision) -> None:
         allowed |= wait_extra
     elif isinstance(decision, Dispatch):
         allowed |= dispatch_extra
-    extras = set(wire) - allowed
+    extras = set(wire.model_dump(exclude_none=True).keys()) - allowed
     assert not extras, f"wire dict has unknown fields: {sorted(extras)}"
 
 
