@@ -17,8 +17,11 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from research_institution.paths import (
     catalog_path,
@@ -69,21 +72,49 @@ class HealthReport:
 # ---------------------------------------------------------------------------
 
 
-class PreflightCheckWire(TypedDict, total=False):
-    """One entry from mathlint preflight's ``checks`` list."""
+class PreflightCheckStatus(StrEnum):
+    """Canonical preflight-check status vocabulary (mathlint emits these).
 
-    id: str
-    name: str
-    status: str  # ``"pass"`` | ``"fail"`` | ``"skip"`` (closed in mathlint)
-    detail: str
-    suggestion: str
+    A typo at the consumer (``status == "passed"`` vs ``"pass"``)
+    fails fast at the Pydantic ValidationError boundary instead of
+    silently misclassifying the check.
+    """
+
+    PASS = "pass"
+    FAIL = "fail"
+    SKIP = "skip"
 
 
-class PreflightPayload(TypedDict, total=False):
-    """Top-level wire shape returned by mathlint preflight --json."""
+class PreflightCheckWire(BaseModel):
+    """One entry from mathlint preflight's ``checks`` list.
 
-    ok: bool
-    checks: list[PreflightCheckWire]
+    Pydantic model replaces the legacy TypedDict so a malformed
+    ``status`` string fails fast at the parse boundary. ``extra=\"allow\"``
+    keeps forward-compat with a future mathlint that adds a new
+    field (e.g. ``duration_ms``).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = None
+    name: str | None = None
+    status: PreflightCheckStatus | None = None
+    detail: str | None = None
+    suggestion: str | None = None
+
+
+class PreflightPayload(BaseModel):
+    """Top-level wire shape returned by mathlint preflight --json.
+
+    The typed model replaces the legacy TypedDict so a malformed
+    payload (missing required ``checks`` list, unknown ``status``
+    string) fails fast at the parse boundary.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool | None = None
+    checks: list[PreflightCheckWire] = Field(default_factory=list)
 
 
 def _run_hermetic_green_gate() -> HealthCheck:
@@ -162,9 +193,11 @@ def _run_live_preflight() -> HealthCheck:
     # lives here; below this point the payload is typed as
     # ``PreflightPayload``.
     try:
-        payload = cast(
-            "PreflightPayload | None",
-            json.loads(completed.stdout) if completed.stdout.strip() else None,
+        raw_payload: object = json.loads(completed.stdout) if completed.stdout.strip() else None
+        payload = (
+            PreflightPayload.model_validate(raw_payload)
+            if isinstance(raw_payload, dict)
+            else None
         )
     except json.JSONDecodeError:
         last_err = ""
