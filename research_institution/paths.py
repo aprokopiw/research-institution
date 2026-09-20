@@ -138,6 +138,21 @@ def pi_monitor_start_script(env: Optional[Environment] = None) -> Path:
     return pi_monitor_repo(env) / "start-pi-monitor-pi-monitor.sh"
 
 
+def pi_monitor_state_dir(env: Optional[Environment] = None) -> Path:
+    """Directory where the pi_monitor supervisor writes runtime state.
+
+    Hardcoded in pi_monitor as ``~/.local/state/mathlint/pi-monitor/``.
+    Surfaced here so the dispatcher's `status` headline reader can
+    import it from a single source of truth rather than hardcoding
+    the same path.
+    """
+    e = env or _OsEnviron()
+    raw = e.get("PI_MONITOR_STATE_DIR")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".local" / "state" / "mathlint" / "pi-monitor"
+
+
 def agent_skills_dir(env: Optional[Environment] = None) -> Path:
     """The pi agent's skill discovery root (default `~/.pi/agent/skills`)."""
     e = env or _OsEnviron()
@@ -173,4 +188,5 @@ __all__ = [
     "pi_monitor_config_path",
     "pi_monitor_repo",
     "pi_monitor_start_script",
+    "pi_monitor_state_dir",
 ]

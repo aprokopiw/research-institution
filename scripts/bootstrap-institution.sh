@@ -63,6 +63,41 @@ for entry in programs:
         print(f"[{name}] already cloned at {local_path}")
 EOF
 
+# Transient-state purge for each catalog program's local checkout.
+# Scope is intentionally narrow: only the directories that the
+# GLLA loop writes to during a run (`.pi-glla/`) and the build
+# cache directories. The 187-attempt dispatch loop (postmortem
+# anchor @INV-0093) identified stale run state as a contributor;
+# clearing these paths on bootstrap gives the next run a clean
+# slate without touching the operator's untracked work.
+#
+# Why not `git clean -fdX` on the whole repo: that would also
+# remove any in-progress editor scratch files the operator may
+# have. Scoping to `.pi-glla/` + `build/` + `dist/` + `.pytest_cache/`
+# is the smallest set that's both safe and effective.
+echo ""
+echo "[bootstrap] purging transient state from each program's local checkout..."
+python3 <<EOF
+import shutil, pathlib, sys, tomllib
+
+catalog = pathlib.Path("$CATALOG")
+data = tomllib.loads(catalog.read_text())
+TRANSIENT_DIRS = (".pi-glla", "build", "dist", ".pytest_cache")
+
+for entry in data.get("programs") or []:
+    local_path = pathlib.Path(entry["local_path"].replace("\$HOME", str(pathlib.Path.home())))
+    if not local_path.exists():
+        continue
+    for sub in TRANSIENT_DIRS:
+        target = local_path / sub
+        if target.is_dir():
+            print(f"[{entry['name']}] purging {target}")
+            shutil.rmtree(target, ignore_errors=True)
+        elif target.exists():
+            print(f"[{entry['name']}] removing {target}")
+            target.unlink()
+EOF
+
 echo ""
 echo "INSTITUTION BOOTSTRAPPED"
 echo "Next: bash green-gate/check-institution.sh --hermetic"

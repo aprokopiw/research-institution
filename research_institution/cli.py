@@ -39,6 +39,11 @@ from research_institution.paths import (
     missing_credentials,
     pi_monitor_config_path,
     pi_monitor_start_script,
+    pi_monitor_state_dir,
+)
+from research_institution.status import (
+    format_headline,
+    read_status_headline,
 )
 
 app = typer.Typer(
@@ -299,12 +304,27 @@ def stop(
 @app.command("status")
 def status(
     program: str = typer.Argument(..., help="Program name from the catalog."),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Delegate to mathlint research-status for full output."
+    ),
 ) -> None:
-    """Read one program's status. Delegates to mathlint research-status."""
+    """Read one program's status.
+
+    Without --verbose: prints a one-line headline derived from the
+    pi_monitor supervisor's runtime state files (B.5.1). Cheap,
+    no subprocess, no LLM.
+
+    With --verbose: delegates to `mathlint research-status` for
+    the full multi-line output. Use this when investigating a
+    specific failure or when the headline is uninformative.
+    """
     _require_program(program)
-    mathlint = _which_or_die("mathlint")
-    rc = subprocess.call([mathlint, "research-status"])
-    raise typer.Exit(code=rc)
+    if verbose:
+        mathlint = _which_or_die("mathlint")
+        rc = subprocess.call([mathlint, "research-status"])
+        raise typer.Exit(code=rc)
+    headline = read_status_headline(program, pi_monitor_state_dir())
+    typer.echo(format_headline(headline))
 
 
 @app.command("watch")

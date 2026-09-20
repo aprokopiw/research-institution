@@ -8,7 +8,7 @@ logic so:
   - The template is version-controlled and unit-testable (no string
     concat in `cli.py`).
   - The `DispatcherVerb` enum drives the verb list (B.1.5 in
-    HARDENING-CHECKLIST); renaming a verb here updates the template
+    ADR-0006); renaming a verb here updates the template
     and the tests automatically.
   - Drift tests in `tests/test_skill_template.py` pin the wire format
     so a future change to `claude-code`'s skill loader surfaces

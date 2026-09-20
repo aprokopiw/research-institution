@@ -54,16 +54,42 @@ def test_stop_delegates_to_mathlint(cli_runner) -> None:
     assert "research-stop" in body
 
 
-def test_status_delegates_to_mathlint(cli_runner) -> None:
-    """research status kaplansky invokes mathlint research-status."""
+def test_status_verbose_delegates_to_mathlint(cli_runner) -> None:
+    """research status --verbose invokes mathlint research-status.
+
+    Without --verbose the dispatcher prints a one-line headline
+    derived from the supervisor's state files (B.5.1) — no
+    subprocess call. With --verbose it delegates to mathlint.
+    """
+    import os
+    log = os.environ["FAKE_SHIM_LOG"]
+    if os.path.exists(log):
+        os.remove(log)
+    result = cli_runner.invoke(args=["status", "kaplansky", "--verbose"], catch_exceptions=False)
+    assert result.exit_code == 0
+    body = open(log, encoding="utf-8").read()
+    assert "research-status" in body
+
+
+def test_status_headline_skips_subprocess(cli_runner) -> None:
+    """research status <program> (no --verbose) does NOT shell out.
+
+    The headline is a pure read of the supervisor's state files;
+    a subprocess call would defeat the purpose of the headline
+    (cheap + safe + no LLM). This test pins that contract.
+    """
     import os
     log = os.environ["FAKE_SHIM_LOG"]
     if os.path.exists(log):
         os.remove(log)
     result = cli_runner.invoke(args=["status", "kaplansky"], catch_exceptions=False)
+    # Exit 0 even when no supervisor state exists; the headline
+    # gracefully reports `no-supervisor` in that case.
     assert result.exit_code == 0
-    body = open(log, encoding="utf-8").read()
-    assert "research-status" in body
+    body = open(log, encoding="utf-8").read() if os.path.exists(log) else ""
+    assert "research-status" not in body, (
+        f"status without --verbose should not invoke mathlint, but log says: {body!r}"
+    )
 
 
 def test_doctor_hermetic_runs_green_gate(cli_runner, repo_root: Path) -> None:
