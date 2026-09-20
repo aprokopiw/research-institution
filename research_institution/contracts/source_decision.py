@@ -43,7 +43,7 @@ typed envelopes through the wire boundary.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias, TypedDict, cast
 
 from pi_monitor.work_source import (
     Dispatch,
@@ -127,11 +127,71 @@ SourceDecision: TypeAlias = Dispatch | Wait | OperatorRequired | Stop
 
 
 # ---------------------------------------------------------------------------
+# Wire shape — TypedDicts so ``source_decision_to_wire`` returns a
+# concrete type instead of ``dict[str, Any]``. Optional fields use
+# ``NotRequired``; required fields are typed by their concrete kind.
+# ---------------------------------------------------------------------------
+
+
+class SourceRevisionWireDict(TypedDict):
+    """Wire shape of :class:`pi_monitor.work_source.SourceRevision`."""
+
+    fingerprint: str
+    observed_unix: float
+    label: str
+
+
+class WorkRequestWireDict(TypedDict, total=False):
+    """Wire shape of :class:`pi_monitor.work_source.WorkRequest`.
+
+    All optional fields default to ``"default"`` (role/workspace) or
+    ``None`` on the typed side; on the wire they are omitted.
+    """
+
+    source_identity: str
+    source_revision: SourceRevisionWireDict
+    operation_id: str
+    operation_kind: str
+    role: str
+    workspace: str
+    payload: dict[str, Any]
+    execution_policy: dict[str, Any]
+    session_policy: dict[str, Any]
+    isolation: dict[str, Any]
+    budget: dict[str, Any]
+    execution_profile: str
+    lease_until_unix: float
+
+
+#: Wire shape of a single decision envelope (all four variants). The
+#: ``kind`` field is the discriminator. Variant-specific optional
+#: fields are declared NotRequired so writers can omit them when
+#: not applicable, and readers can narrow via ``kind`` checks.
+class SourceDecisionWireDict(TypedDict, total=False):
+    """Wire shape of the four-decision-variant discriminated envelope.
+
+    All variant-specific fields are optional. Callers narrow by
+    inspecting the ``kind`` field first.
+    """
+
+    kind: DecisionKindLiteral
+    source_revision: SourceRevisionWireDict
+    decided_unix: float
+    reason_code: ReasonCodeLiteral
+    reason: str
+    work: list[WorkRequestWireDict]
+    wake_on_source_change: bool
+    retry_after_seconds: float
+    until_unix: float
+    payload: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
 # Wire serialization helpers
 # ---------------------------------------------------------------------------
 
 
-def source_decision_to_wire(decision: SourceDecision) -> dict[str, Any]:
+def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
     """Serialize a typed ``SourceDecision`` back to the wire dict shape.
 
     The reverse of :func:`parse_source_decision`. Both helpers stay
@@ -139,31 +199,32 @@ def source_decision_to_wire(decision: SourceDecision) -> dict[str, Any]:
     place. Constitution Principle VII.
     """
     rev = decision.source_revision
-    rev_dict = {
-        "fingerprint": rev.fingerprint,
-        "observed_unix": rev.observed_unix,
-        "label": rev.label,
-    }
+    rev_dict = SourceRevisionWireDict(
+        fingerprint=rev.fingerprint,
+        observed_unix=rev.observed_unix,
+        label=rev.label,
+    )
     kind = decision_kind(decision)
     if kind is DecisionKind.DISPATCH:
         dispatch = cast("Dispatch", decision)
-        return {
-            "kind": "dispatch",
-            "source_revision": rev_dict,
-            "decided_unix": dispatch.decided_unix,
-            "reason_code": dispatch.reason_code,
-            "reason": dispatch.reason,
-            "work": [_work_request_to_wire(w) for w in dispatch.work],
-        }
+        result = SourceDecisionWireDict(
+            kind="dispatch",
+            source_revision=rev_dict,
+            decided_unix=dispatch.decided_unix,
+            reason_code=cast("ReasonCodeLiteral", dispatch.reason_code),
+            reason=dispatch.reason,
+            work=[_work_request_to_wire(w) for w in dispatch.work],
+        )
+        return result
     if kind is DecisionKind.WAIT:
         wait = cast("Wait", decision)
-        result: dict[str, Any] = {
-            "kind": "wait",
-            "source_revision": rev_dict,
-            "decided_unix": wait.decided_unix,
-            "reason_code": wait.reason_code,
-            "reason": wait.reason,
-        }
+        result = SourceDecisionWireDict(
+            kind="wait",
+            source_revision=rev_dict,
+            decided_unix=wait.decided_unix,
+            reason_code=cast("ReasonCodeLiteral", wait.reason_code),
+            reason=wait.reason,
+        )
         if wait.wake_on_source_change:
             result["wake_on_source_change"] = True
         if wait.retry_after_seconds is not None:
@@ -175,27 +236,27 @@ def source_decision_to_wire(decision: SourceDecision) -> dict[str, Any]:
         return result
     if kind is DecisionKind.OPERATOR_REQUIRED:
         op = cast("OperatorRequired", decision)
-        return {
-            "kind": "operator_required",
-            "source_revision": rev_dict,
-            "decided_unix": op.decided_unix,
-            "reason_code": op.reason_code,
-            "reason": op.reason,
-        }
+        return SourceDecisionWireDict(
+            kind="operator_required",
+            source_revision=rev_dict,
+            decided_unix=op.decided_unix,
+            reason_code=cast("ReasonCodeLiteral", op.reason_code),
+            reason=op.reason,
+        )
     # DecisionKind.STOP — narrowing by elimination.
     stop = cast("Stop", decision)
-    return {
-        "kind": "stop",
-        "source_revision": rev_dict,
-        "decided_unix": stop.decided_unix,
-        "reason_code": stop.reason_code,
-        "reason": stop.reason,
-    }
+    return SourceDecisionWireDict(
+        kind="stop",
+        source_revision=rev_dict,
+        decided_unix=stop.decided_unix,
+        reason_code=cast("ReasonCodeLiteral", stop.reason_code),
+        reason=stop.reason,
+    )
 
 
-def _work_request_to_wire(req: WorkRequest) -> dict[str, Any]:
+def _work_request_to_wire(req: WorkRequest) -> WorkRequestWireDict:
     """Serialize one ``WorkRequest`` to its wire-dict shape."""
-    result: dict[str, Any] = {
+    result: WorkRequestWireDict = {
         "source_identity": req.source_identity,
         "source_revision": {
             "fingerprint": req.source_revision.fingerprint,
@@ -349,10 +410,13 @@ __all__ = [
     "REASON_WORK_AVAILABLE",
     "ReasonCodeLiteral",
     "SourceDecision",
+    "SourceDecisionWireDict",
     "SourceRevision",
+    "SourceRevisionWireDict",
     "Stop",
     "Wait",
     "WorkRequest",
+    "WorkRequestWireDict",
     "decision_kind",
     "parse_source_decision",
     "source_decision_to_wire",
