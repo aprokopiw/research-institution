@@ -101,6 +101,40 @@ else
     printf '[v0-ruff] not on PATH (skipped; CI enforces this gate)\n'
 fi
 
+# 0.5. V-WIRE — cross-repo wiring (mathlint's autonomy.sh G7).
+# This is the new tier that catches composition defects that
+# component-level unit tests in any single repo miss:
+#   - the mathlint source CLI must call discover_program_providers
+#     on startup (CROSS_REPO_001),
+#   - installed program plugins must populate the
+#     work_source_provider slot (CROSS_REPO_002),
+#   - the mathlint-source subprocess must answer a decide frame
+#     without crashing (CROSS_REPO_003),
+#   - local.toml.model_route must equal local-pi-monitor.toml
+#     [worker].model (CROSS_REPO_005).
+# Skipped when RESEARCH_INSTITUTION_HERMETIC=1 (CI runners without
+# mathlint) or when MATHLINT_AUTONOMY_SKIP_G7=1 (cold-start hatch).
+# When RESEARCH_INSTITUTION_VWIRE_DIRECT=1, runs the test file
+# directly with pytest instead of the full autonomy.sh — useful
+# for CI runners where G1..G6 of autonomy.sh would block on
+# unrelated pre-existing convention drift in mathlint.
+AUTONOMY_SCRIPT="${RESEARCH_INSTITUTION_AUTONOMY_SCRIPT:-$(expand '$HOME')/Documents/andrei/math/scripts/autonomy.sh}"
+MATHLINT_TEST_DIR="${RESEARCH_INSTITUTION_MATHLINT_TEST_DIR:-$(expand '$HOME')/Documents/andrei/math}"
+if [ "${RESEARCH_INSTITUTION_HERMETIC:-0}" = "1" ]; then
+    printf '[v-wire] hermetic mode (skipped)\n'
+elif [ "${MATHLINT_AUTONOMY_SKIP_G7:-0}" = "1" ]; then
+    printf '[v-wire] MATHLINT_AUTONOMY_SKIP_G7=1 (skipped)\n'
+elif [ "${RESEARCH_INSTITUTION_VWIRE_DIRECT:-0}" = "1" ] && [ -f "$MATHLINT_TEST_DIR/tests/local_readiness/test_cross_repo_wiring.py" ]; then
+    # Direct path: bypass autonomy.sh G1..G6 and invoke just the
+    # cross-repo wiring test. Use the math-engine venv's pytest.
+    MATHLINT_PYTEST="${RESEARCH_INSTITUTION_MATHLINT_PYTEST:-$MATHLINT_TEST_DIR/.venv/bin/python}"
+    run_check "v-wire" sh -c "cd '$MATHLINT_TEST_DIR' && '$MATHLINT_PYTEST' -m pytest --no-cov -q tests/local_readiness/test_cross_repo_wiring.py"
+elif [ -f "$AUTONOMY_SCRIPT" ]; then
+    run_check "v-wire" sh -c "bash '$AUTONOMY_SCRIPT'"
+else
+    printf '[v-wire] autonomy.sh not at %s; skipping\n' "$AUTONOMY_SCRIPT"
+fi
+
 # 1. Engine (mathlint) — always runs.
 ENGINE_FLAGS="--skip-external --use-program=self_test-sample"
 if [ "$MODE" = "live" ]; then

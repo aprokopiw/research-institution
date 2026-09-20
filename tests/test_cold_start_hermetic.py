@@ -66,22 +66,75 @@ def test_cold_start_list(cli_runner) -> None:
 
 
 def test_cold_start_doctor_hermetic() -> None:
-    """Step 2: green gate --hermetic returns GREEN INSTITUTION READY."""
+    """Step 2: green gate --hermetic returns GREEN INSTITUTION READY.
+
+    V-WIRE is opt-in for this test (set
+    RESEARCH_INSTITUTION_RUN_VWIRE=1 to include it). By default the
+    cold-start doctor asserts V0+V2 are green and leaves V-WIRE for
+    the dedicated cross-repo wiring tests in
+    `tests/local_readiness/test_cross_repo_wiring.py` (run separately
+    via the math-engine venv). This separation matches the
+    `@ADR-0006` boundary: the dispatcher is not the canonical
+    authority on cross-repo composition contracts.
+    """
     gate = REPO / "green-gate" / "check-institution.sh"
     if not gate.is_file():
         pytest.skip("green gate missing")
+    env = os.environ.copy()
+    if os.environ.get("RESEARCH_INSTITUTION_RUN_VWIRE") == "1":
+        env["RESEARCH_INSTITUTION_VWIRE_DIRECT"] = "1"
+    else:
+        env["MATHLINT_AUTONOMY_SKIP_G7"] = "1"
     result = subprocess.run(
         ["bash", str(gate), "--hermetic"],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, (
         f"green gate failed: rc={result.returncode} stdout={result.stdout!r} "
         f"stderr={result.stderr!r}"
     )
     assert "GREEN INSTITUTION READY" in result.stdout
+
+
+def test_cold_start_doctor_hermetic_with_vwire() -> None:
+    """Step 2 (strict): green gate --hermetic + V-WIRE returns GREEN INSTITUTION READY.
+
+    Opt-in variant of `test_cold_start_doctor_hermetic` that runs the
+    full cross-repo wiring tier. This test fails fast when the
+    institution is wired but a cross-repo composition contract is
+    broken (e.g. an installed program plugin fails to populate the
+    work_source_provider slot). The diagnostic points directly at the
+    boundary that needs fixing. Skipped by default to keep the
+    cold-start workflow decoupled from the cross-repo contract tier
+    per @ADR-0006; run with RESEARCH_INSTITUTION_RUN_VWIRE=1 to
+    exercise it in CI.
+    """
+    if os.environ.get("RESEARCH_INSTITUTION_RUN_VWIRE") != "1":
+        pytest.skip("RESEARCH_INSTITUTION_RUN_VWIRE not set; cross-repo wiring skipped")
+    gate = REPO / "green-gate" / "check-institution.sh"
+    if not gate.is_file():
+        pytest.skip("green gate missing")
+    env = os.environ.copy()
+    env["RESEARCH_INSTITUTION_VWIRE_DIRECT"] = "1"
+    result = subprocess.run(
+        ["bash", str(gate), "--hermetic"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"green gate (with V-WIRE) failed: rc={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "v-wire" in result.stdout, (
+        f"V-WIRE sub-check did not appear in gate output: {result.stdout!r}"
+    )
 
 
 @pytest.mark.skipif(

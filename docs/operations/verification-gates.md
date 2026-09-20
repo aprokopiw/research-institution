@@ -7,18 +7,65 @@ defines what "GREEN" means at each tier.
 
 ## Tier definitions
 
-The repository follows the standard V0–V4 GREEN hierarchy. Each tier
-has a specific purpose and a specific executable command. **GREEN at a
-tier means the tier's command passed; nothing more.** Cross-tier claims
-(e.g. "the dispatcher is bug-free") require cross-tier evidence.
+The repository follows the standard V0–V4 GREEN hierarchy with one
+additional tier, **V-WIRE**, that catches cross-repo composition
+defects that per-repo unit tests cannot reach. Each tier has a
+specific purpose and a specific executable command. **GREEN at a
+tier means the tier's command passed; nothing more.** Cross-tier
+claims (e.g. "the dispatcher is bug-free") require cross-tier
+evidence.
 
 | Tier | Purpose | Command | Status |
 |---|---|---|---|
 | **V0** | structural validity (lint, type, schema) | `ruff check research_institution tests` | PASS (CI + green-gate) |
-| **V1** | fast local confidence (unit tests) | `pytest -q` | PASS (192 tests, 2 skipped) |
+| **V1** | fast local confidence (unit tests) | `pytest -q` | PASS (296+ tests, 2 skipped) |
+| **V-WIRE** | cross-repo composition contracts | `bash $HOME/Documents/andrei/math/scripts/autonomy.sh` (mathlint G7) | PASS / FAIL (operator decision pending on kaplansky work_source_provider) |
 | **V2** | hermetic repository confidence (full suite + green-gate) | `bash green-gate/check-institution.sh --hermetic` | PASS |
 | **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status | PARTIAL |
 | **V4** | system / release assurance (clean-install, live-mode wiring) | `bash green-gate/check-institution.sh --live` (operator-only) | BLOCKED without operator creds; hermetic variant under `RESEARCH_INSTITUTION_HERMETIC=1` |
+
+## V-WIRE — cross-repo composition contracts
+
+**Claim:** the institution wires correctly across math-engine +
+pi_monitor + kaplansky (and any future research-program package).
+Unit tests in any one repo CANNOT verify this — they only verify
+their own boundaries.
+
+**Evidence:** mathlint's `scripts/autonomy.sh` G7 runs
+`tests/integration/test_three_repo_autonomy_e2e.py` AND
+`tests/local_readiness/test_cross_repo_wiring.py`. Each test in
+the latter file is prefixed with a stable ID (`CROSS_REPO_001`
+through `CROSS_REPO_006`) so audit logs and dashboards can grep
+for them.
+
+**What V-WIRE catches** (each is a real defect the institution has
+hit at least once):
+
+| ID | Defect |
+|---|---|
+| CROSS_REPO_001 | mathlint-source CLI doesn't call `discover_program_providers()` on startup → slot stays empty |
+| CROSS_REPO_002 | installed program plugin (e.g. kaplansky) registers `ProgramProviders` without `work_source_provider` → slot stays empty |
+| CROSS_REPO_003 | `mathlint-source` subprocess crashes or returns `SOURCE_NO_PROVIDER` because of #1 and/or #2 |
+| CROSS_REPO_004 | `mathlint.providers` entry point not discoverable (pyproject.toml drift, broken install) |
+| CROSS_REPO_005 | `local.toml.model_route` and `local-pi-monitor.toml [worker].model` disagree → silent route mismatch |
+| CROSS_REPO_006 | supervisor.lock file is unreadable / in an unknown state (corruption detection) |
+
+**Skipped when:**
+
+- `MATHLINT_AUTONOMY_SKIP_G7=1` (cold-start escape hatch; same knob
+  that autonomy.sh G7 honors).
+- `RESEARCH_INSTITUTION_HERMETIC=1` (CI runners without mathlint
+  installed; same pattern as the engine sub-check).
+- `bash $HOME/Documents/andrei/math/scripts/autonomy.sh` not found
+  (operator has not yet run `scripts/bootstrap-institution.sh`).
+
+**How to add a V-WIRE assertion:** drop a `test_cross_repo_NNN_*`
+function in
+`$HOME/Documents/andrei/math/tests/local_readiness/test_cross_repo_wiring.py`.
+The autonomy.sh G7 invocation picks it up automatically; the
+institution green-gate picks it up via `RESEARCH_INSTITUTION_AUTONOMY_SCRIPT`
+(defaults to the canonical operator path).
+
 
 ## V0 — structural validity
 

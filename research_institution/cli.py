@@ -358,9 +358,19 @@ def start(
         typer.echo("WARN: --skip-gate passed; architecture-review gate bypassed", err=True)
 
     # Credential check is required for BOTH modes (the worker + judge
-    # both call `pi` which needs OAuth via @ADR-0001).
+    # both call `pi` which needs OAuth via @ADR-0001). When the only
+    # missing credential is MATHLINT_MODEL_ROUTE, fall back to the
+    # configured route in ~/.config/mathlint/local.toml so the
+    # operator doesn't have to `export` per-shell.
     if prog.live_credentials_required:
+        from research_institution.paths import resolve_model_route
+
         missing = missing_credentials(prog)
+        if "MATHLINT_MODEL_ROUTE" in missing:
+            inferred = resolve_model_route()
+            if inferred is not None:
+                os.environ["MATHLINT_MODEL_ROUTE"] = inferred
+                missing = [v for v in missing if v != "MATHLINT_MODEL_ROUTE"]
         if missing:
             typer.echo(f"FATAL: missing credential env var(s): {', '.join(missing)}", err=True)
             raise typer.Exit(code=4)
