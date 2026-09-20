@@ -5,7 +5,7 @@ emits. Per `@ADR-0006`, the dispatcher is a read-only consumer of
 these envelopes; if pi_monitor changes a discriminator string or a
 required field, these tests surface the drift.
 
-Mirrors the canonical definitions in `pi_monitor.work_source`; the
+Mirrors the canonical definitions in `pi_monitor.work.work_source`; the
 two are kept in sync via these tests (drift in pi_monitor -> failing
 test here -> fix the mirror).
 
@@ -195,7 +195,7 @@ def test_work_request_idempotency_key() -> None:
 
 
 def test_work_request_default_fields() -> None:
-    """Default fields match the documented pi_monitor.work_source defaults."""
+    """Default fields match the documented pi_monitor.work.work_source defaults."""
     w = WorkRequest(
         source_identity="mathlint",
         source_revision=SourceRevision(fingerprint="x", observed_unix=0.0),

@@ -21,7 +21,7 @@ abstraction or a `Path`/`subprocess.run`-style runner, both
 injectable from tests via ``tests/_fakes.py``.
 
 Spec 014 (typed-contract consolidation): ``status_payload`` is
-the typed :class:`pi_monitor.supervisor_status.SupervisorStatusPayload`
+the typed :class:`pi_monitor.operator.supervisor_status.SupervisorStatusPayload`
 re-exported here as :class:`SupervisorStatusPayload`. The
 dispatcher imports the canonical Pydantic model so a drift in
 pi-monitor's wire shape surfaces at every call site (the typed
@@ -38,13 +38,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
-from pi_monitor.supervisor_status import (
+from pi_monitor.operator.supervisor_status import (
     SupervisorStatusPayload as _TypedSupervisorStatusPayload,
     parse_supervisor_status_payload as _parse_typed_status,
 )
 from research_institution.paths import pi_monitor_config_path
 
-#: Re-export of :class:`pi_monitor.supervisor_status.SupervisorStatusPayload`
+#: Re-export of :class:`pi_monitor.operator.supervisor_status.SupervisorStatusPayload`
 #: so research-institution consumers import the canonical type from a
 #: single name. Both sides see the same class identity; a drift in
 #: pi-monitor's wire shape surfaces here as a class-identity change

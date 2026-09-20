@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import unittest
 
-from pi_monitor.work_source import (
+from pi_monitor.work.work_source import (
     DecisionKind,
     Dispatch,
     OperatorRequired,
@@ -66,7 +66,7 @@ class SourceRevisionWireDictTests(unittest.TestCase):
         )
         # The wire model is ri-internal; the canonical dataclass
         # is pi_monitor's ``SourceRevision``.
-        from pi_monitor.work_source import SourceRevision
+        from pi_monitor.work.work_source import SourceRevision
 
         d = SourceRevision(
             fingerprint=wire.fingerprint,

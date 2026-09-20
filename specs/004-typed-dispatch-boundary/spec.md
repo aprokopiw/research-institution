@@ -21,7 +21,7 @@ pi_monitor, kaplansky)."
 ### User Story 1 — Engineer Edits A Source And Pyright Catches A Wire Drift
 
 An engineer adds a field to the supervisor's `Dispatch` envelope
-in `pi_monitor/src/pi_monitor/work_source.py`. Pyright immediately
+in `pi_monitor/src/pi_monitor/work/work_source.py`. Pyright immediately
 flags every call site that constructs `Dispatch(...)` without the
 new field. Pyright also flags the OS provider's adapter that
 constructs `Wait(...)` with the wrong shape. The engineer never
@@ -88,7 +88,7 @@ the typed definition byte-for-byte.
 ### User Story 3 — Math Kernel Cannot Mistakenly Import pi_monitor At Runtime
 
 A future contributor accidentally adds
-`from pi_monitor.work_source import Wait` to a math module. Pyright
+`from pi_monitor.work.work_source import Wait` to a math module. Pyright
 flags it as a `reportPrivateImport` (because math is not in
 pi_monitor's [tool.mypy / pyright] allow-list) and the CI fails.
 
@@ -147,7 +147,7 @@ Pyright reports the missing call sites. Remove the sentinel.
   `__init__.py` that re-exports the public types.
 - **FR-002** The package contains zero runtime logic. All
   definitions are `TYPE_CHECKING`-gated re-exports from
-  `pi_monitor.work_source` plus local `TypeAlias` declarations
+  `pi_monitor.work.work_source` plus local `TypeAlias` declarations
   for any types that are not in pi_monitor.
 - **FR-003** Every envelope class in `dispatch_protocol.envelope`
   is `@dataclass(frozen=True, slots=True)`. Constructors take

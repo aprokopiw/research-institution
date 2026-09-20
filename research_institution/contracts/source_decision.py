@@ -1,7 +1,7 @@
 """Typed view of the WorkSourceProvider source-decision envelope.
 
 Per `@ADR-0006`, research-institution does NOT own the source-decision
-contract — pi_monitor (`pi_monitor.work_source`) is the canonical
+contract — pi_monitor (`pi_monitor.work.work_source`) is the canonical
 authority. Math emits one of the four decision variants; pi_monitor
 serializes them on the wire; research-institution parses them on
 read paths (status, observability, test surfaces).
@@ -11,7 +11,7 @@ research-institution side of the boundary. It re-exports pi_monitor's
 frozen dataclasses by identity, so:
 
   - ``isinstance(x, contracts.source_decision.Dispatch)`` is the
-    same check as ``isinstance(x, pi_monitor.work_source.Dispatch)``;
+    same check as ``isinstance(x, pi_monitor.work.work_source.Dispatch)``;
     there is exactly one class, not two.
   - Pyright sees one type across both sides; a drift in pi_monitor
     surfaces at every call site in research-institution.
@@ -46,14 +46,14 @@ from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
-from pi_monitor.work_envelopes import (
+from pi_monitor.protocol.work_envelopes import (
     BudgetPolicy as WorkRequestBudgetPolicy,
     ExecutionPolicy as WorkRequestExecutionPolicy,
     IsolationPolicy as WorkRequestIsolationPolicy,
     SessionPolicy as WorkRequestSessionPolicy,
     WorkRequestPayload,
 )
-from pi_monitor.work_source import (
+from pi_monitor.work.work_source import (
     CANONICAL_REASON_CODES as _PM_CANONICAL_REASON_CODES,
     CanonicalReasonCode as PM_CanonicalReasonCode,
     DecisionKind as PM_DecisionKind,
@@ -82,7 +82,7 @@ from pi_monitor.work_source import (
 # types by identity. Local duplicates were the historical source of
 # drift (a typo at one of two definitions silently desynchronizes the
 # verifier on the other side); the canonical version now lives in
-# ``pi_monitor.work_source`` and this module re-exports the names.
+# ``pi_monitor.work.work_source`` and this module re-exports the names.
 # ---------------------------------------------------------------------------
 
 #: Re-export of the closed canonical reason-code set. ``frozenset[Literal[...]]``
@@ -91,13 +91,13 @@ from pi_monitor.work_source import (
 CANONICAL_REASON_CODES: frozenset[str] = _PM_CANONICAL_REASON_CODES
 
 #: Closed reason-code vocabulary as a Literal type. Re-export of
-#: :data:`pi_monitor.work_source.CanonicalReasonCode` so the strict
+#: :data:`pi_monitor.work.work_source.CanonicalReasonCode` so the strict
 #: pyright config turns unknown reason_codes into a compile-time
 #: error at any call site that declares ``reason_code: CanonicalReasonCode``.
 CanonicalReasonCode = PM_CanonicalReasonCode
 
 #: ``kind`` discriminator StrEnum. Re-export of
-#: :class:`pi_monitor.work_source.DecisionKind`. This is the
+#: :class:`pi_monitor.work.work_source.DecisionKind`. This is the
 #: canonical type for the envelope ``kind`` field; pi_monitor emits
 #: ``DecisionKind.DISPATCH.value`` and ri reads ``decision.kind ==
 #: DecisionKind.DISPATCH`` (both reference the same enum identity).
@@ -143,13 +143,13 @@ DecisionKindLiteral: TypeAlias = Literal["dispatch", "wait", "operator_required"
 # forward-compat (a future source may add a new field). The five
 # opaque policy dicts (``payload`` / ``execution_policy`` / ...)
 # stay ``dict[str, Any]`` at the wire layer because their typed
-# shape is the Pydantic models in :mod:`pi_monitor.work_envelopes`
+# shape is the Pydantic models in :mod:`pi_monitor.protocol.work_envelopes`
 # (the boundary is :func:`parse_work_request_envelopes`).
 # ---------------------------------------------------------------------------
 
 
 class SourceRevisionWireDict(BaseModel):
-    """Wire shape of :class:`pi_monitor.work_source.SourceRevision`.
+    """Wire shape of :class:`pi_monitor.work.work_source.SourceRevision`.
 
     ``fingerprint`` and ``observed_unix`` are technically required
     by the wire contract; ``observed_unix`` defaults to ``0.0``
@@ -166,7 +166,7 @@ class SourceRevisionWireDict(BaseModel):
 
 
 class WorkRequestWireDict(BaseModel):
-    """Wire shape of :class:`pi_monitor.work_source.WorkRequest`.
+    """Wire shape of :class:`pi_monitor.work.work_source.WorkRequest`.
 
     All optional fields default to ``"default"`` (role/workspace) or
     ``None`` on the typed side; on the wire they are omitted via
@@ -176,7 +176,7 @@ class WorkRequestWireDict(BaseModel):
     The five opaque fields (``payload`` / ``execution_policy`` /
     ``session_policy`` / ``isolation`` / ``budget``) are source-
     owned: their typed shapes are Pydantic models in
-    :mod:`pi_monitor.work_envelopes`. The wire-format JSON is
+    :mod:`pi_monitor.protocol.work_envelopes`. The wire-format JSON is
     ``dict[str, Any]``; the typed shape is one ``.model_validate()``
     away. See :func:`parse_work_request_envelopes` for the single
     boundary that produces a typed :class:`WorkRequest`.
@@ -438,7 +438,7 @@ def _parse_work_request(raw: dict[str, Any]) -> WorkRequest:
 TypedWorkRequestPayload = WorkRequestPayload
 
 #: Typed envelope for ``WorkRequest.execution_policy``. Re-exported
-#: from :mod:`pi_monitor.work_envelopes` so consumers do not need to
+#: from :mod:`pi_monitor.protocol.work_envelopes` so consumers do not need to
 #: import from a third-party module to see the typed shape.
 TypedExecutionPolicy = WorkRequestExecutionPolicy
 

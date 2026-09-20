@@ -145,7 +145,7 @@ def test_os_register_idempotent(mathlint_kernels) -> None:
 
 def test_select_next_work_returns_wait_envelope(mathlint_kernels) -> None:
     """The OS work-source callable emits a typed Wait envelope."""
-    from pi_monitor.work_source import Wait as _Wait
+    from pi_monitor.work.work_source import Wait as _Wait
 
     from research_institution.providers.research_institution_provider import (
         select_next_work_for_supervisor,
@@ -172,7 +172,7 @@ def test_select_next_work_is_pure() -> None:
     supplies the dispatch shape and lets the kernel fill the
     work item.
     """
-    from pi_monitor.work_source import (
+    from pi_monitor.work.work_source import (
         Dispatch,
         OperatorRequired,
         Stop,

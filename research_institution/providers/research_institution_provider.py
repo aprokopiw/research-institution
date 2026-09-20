@@ -182,7 +182,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
     union (``Dispatch | Wait``); pyright enforces the required field
     set on each variant and forbids any hand-rolled dict construction
     at the dispatch boundary. Envelope serialisation is the
-    supervisor's responsibility — see ``pi_monitor.source_wire``.
+    supervisor's responsibility — see ``pi_monitor.protocol.source_wire``.
 
     Defect class (if regressed): a future refactor that returns a
     ``Dispatch`` with an empty ``work`` list would silently park

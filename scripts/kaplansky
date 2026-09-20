@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# kaplansky — one-word operator launcher for the kaplansky math-research supervisor.
+# Delegates to `mathlint-kaplansky`, the canonical typed-Python launcher that
+# reads the single source of truth at ~/.config/mathlint/local-pi-monitor.toml.
+# No TOML rewriting, no env var plumbing: the launcher owns everything.
+#
+# Usage:
+#   kaplansky           attach Textual TUI (kaplansky | tail-f supervisor log)
+#   kaplansky status    one-shot supervisor status
+#   kaplansky snapshot  activity snapshot (no LLM)
+#   kaplansky run       launch detached
+#   kaplansky stop      stop supervisor + worker
+#   kaplansky restart   stop then start
+#   kaplansky activity  last dispatches / reports / commits
+#   kaplansky journal   tail supervisor log (foreground)
+#   kaplansky verify    5+1 live diagnostic checks
+#   kaplansky doctor    full diagnostic run
+
+set -euo pipefail
+
+ACTION="${1:-}"
+MATH="/Users/erinprokopiw/Documents/andrei/math"
+
+# Canonical launcher (proved by docs/operations/run-pi-monitor-on-kaplansky.md).
+LAUNCHER="$MATH/.venv/bin/mathlint-kaplansky"
+
+if [[ ! -x "$LAUNCHER" ]]; then
+    echo "fatal: $LAUNCHER not installed" >&2
+    echo "run: uv pip install --python $MATH/.venv/bin/python -e $MATH -e /Users/erinprokopiw/Documents/andrei/kaplansky" >&2
+    exit 2
+fi
+
+# Run detached. `nohup` so the supervisor survives our turn ending.
+run_detached() {
+    if "$LAUNCHER" status >/dev/null 2>&1; then
+        echo "already running: $("$LAUNCHER" status 2>&1 | head -1)"
+        return 0
+    fi
+    nohup "$LAUNCHER" start </dev/null >/tmp/mathlint-kaplansky.log 2>&1 &
+    disown
+    # Wait up to 25s for supervisor ready (the launcher returns once ready per docs).
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        sleep 2
+        if "$LAUNCHER" status >/dev/null 2>&1; then
+            echo "supervisor ready (pid=$("$LAUNCHER" status 2>&1 | head -1 | grep -oE 'pid=[0-9]+' | head -1))"
+            return 0
+        fi
+    done
+    echo "supervisor did not become ready in 24s — see /tmp/mathlint-kaplansky.log"
+    tail -30 /tmp/mathlint-kaplansky.log
+    return 1
+}
+
+case "$ACTION" in
+    tui|""|watch)
+        # 'kaplansky' with no args: prefer TUI if TTY, else journal (log tail)
+        if [[ -t 1 ]] && "$LAUNCHER" status >/dev/null 2>&1; then
+            # Attach to running supervisor's persisted state via pi-monitor watch.
+            # mathlint-kaplansky does not ship a TUI; it ships the typed supervisor.
+            # We delegate to `pi-monitor watch` against the same config.
+            exec "$MATH/.venv/bin/pi-monitor" \
+                watch \
+                --config "$HOME/.config/mathlint/local-pi-monitor.toml" \
+                --script "$MATH/scripts/pi-monitor-kaplansky.sh"
+        fi
+        # No TTY or not running: kick start, then journal.
+        run_detached
+        exec "$LAUNCHER" journal -f
+        ;;
+    status)   exec "$LAUNCHER" status ;;
+    snapshot) exec "$LAUNCHER" snapshot ;;
+    activity) shift; exec "$LAUNCHER" activity "$@" ;;
+    run)
+        run_detached
+        ;;
+    stop)     exec "$LAUNCHER" stop ;;
+    restart)  exec "$LAUNCHER" restart ;;
+    journal)
+        shift
+        if [[ "$1" == "-f" ]]; then
+            exec "$LAUNCHER" journal -f
+        fi
+        exec "$LAUNCHER" journal "$@"
+        ;;
+    verify)   exec "$LAUNCHER" verify ;;
+    bootstrap)exec "$LAUNCHER" bootstrap ;;
+    install)  exec "$LAUNCHER" install ;;
+    doctor)
+        "$LAUNCHER" verify
+        ;;
+    *)
+        # fall-through: any verb we have not wrapped, pass to launcher
+        exec "$LAUNCHER" "$ACTION"
+        ;;
+esac

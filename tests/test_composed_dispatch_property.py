@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pi_monitor.work_source import (
+from pi_monitor.work.work_source import (
     Dispatch,
     OperatorRequired,
     SourceRevision,

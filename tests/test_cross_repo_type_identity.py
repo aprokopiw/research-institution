@@ -8,13 +8,13 @@ every import site.
 
 Identity pairs (ri-side name = pi-monitor canonical):
 
-  - DecisionKind            == pi_monitor.work_source.DecisionKind
-  - CanonicalReasonCode     == pi_monitor.work_source.CanonicalReasonCode
-  - OperationKind           == pi_monitor.work_source.OperationKind
-  - RoleName                == pi_monitor.work_source.RoleName
-  - SourceIdentity          == pi_monitor.work_source.SourceIdentity
-  - WorkspaceName           == pi_monitor.work_source.WorkspaceName
-  - SupervisorStatusPayload == pi_monitor.supervisor_status.SupervisorStatusPayload
+  - DecisionKind            == pi_monitor.work.work_source.DecisionKind
+  - CanonicalReasonCode     == pi_monitor.work.work_source.CanonicalReasonCode
+  - OperationKind           == pi_monitor.work.work_source.OperationKind
+  - RoleName                == pi_monitor.work.work_source.RoleName
+  - SourceIdentity          == pi_monitor.work.work_source.SourceIdentity
+  - WorkspaceName           == pi_monitor.work.work_source.WorkspaceName
+  - SupervisorStatusPayload == pi_monitor.operator.supervisor_status.SupervisorStatusPayload
 
 Each pair MUST be ``assertIs``-identical: a single source of truth
 means one class, not two mirrored copies.
@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import unittest
 
-from pi_monitor import supervisor_status, work_source
+from pi_monitor.operator import supervisor_status
+from pi_monitor.work import work_source
 from research_institution.contracts import source_decision
 from research_institution.supervisor import SupervisorStatusPayload
 

@@ -2,7 +2,7 @@
 
 The dispatcher calls :func:`research_institution.supervisor.probe_supervisor`
 and gets back a :class:`SupervisorState` whose ``status_payload`` is
-the typed :class:`pi_monitor.supervisor_status.SupervisorStatusPayload`
+the typed :class:`pi_monitor.operator.supervisor_status.SupervisorStatusPayload`
 (re-exported as :data:`research_institution.supervisor.SupervisorStatusPayload`).
 
 These tests pin the typed boundary so a drift in pi-monitor's wire
@@ -53,7 +53,7 @@ class SupervisorStatusTypedContractTests(unittest.TestCase):
         # The dispatcher must see the same class identity as pi-monitor;
         # a drift in pi-monitor's wire shape surfaces at the
         # import boundary (pyright flags the re-export change).
-        from pi_monitor.supervisor_status import (
+        from pi_monitor.operator.supervisor_status import (
             SupervisorStatusPayload as PM_SSP,
         )
         self.assertIs(SupervisorStatusPayload, PM_SSP)

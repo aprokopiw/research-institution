@@ -4,7 +4,7 @@ kind: request
 status: drafted
 target: mathlint
 target-id: adr-pending-in-math
-title: mathlint decide_next kind discriminator must use the canonical lowercase form per pi_monitor.work_source
+title: mathlint decide_next kind discriminator must use the canonical lowercase form per pi_monitor.work.work_source
 date: 2026-09-19
 related:
   - AGENTS.md
@@ -27,7 +27,7 @@ emitter returns today.
 ## Origin (caught by tests, not by operator)
 
 The 2026-09-19 hardening pass added typed-contract tests for the
-source-decision envelope (mirroring `pi_monitor.work_source`). One
+source-decision envelope (mirroring `pi_monitor.work.work_source`). One
 test feeds the exact envelope shape `mathlint.orchestration.real_source.decide_next`
 returns into the dispatcher's mirror parser; the parser rejects it
 because:
@@ -58,7 +58,7 @@ All four decision variants are emitted capitalized. None of them
 match pi_monitor's canonical lowercase constants.
 
 ```text
-$ grep -n 'KIND_' /Users/erinprokopiw/Documents/andrei/pi_monitor/src/pi_monitor/work_source.py
+$ grep -n 'KIND_' /Users/erinprokopiw/Documents/andrei/pi_monitor/src/pi_monitor/work/work_source.py
 43:KIND_DISPATCH = "dispatch"
 (...)
 ```
@@ -101,7 +101,7 @@ signal that the agreement has rotted.
 ## Acceptance criteria
 
 - [ ] mathlint's `real_source.decide_next` emits lowercase kind
-      values that match `pi_monitor.work_source.KIND_*`.
+      values that match `pi_monitor.work.work_source.KIND_*`.
 - [ ] mathlint has a regression test asserting
       `parse_source_decision(envelope)` accepts every decision
       `real_source` can emit.

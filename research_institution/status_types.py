@@ -80,9 +80,17 @@ class ExecutionStateSnapshot(_StatusWireMixin):
     """Wire shape of the supervisor's execution sub-record.
 
     Shared between ``health.json`` and ``latest.json``. The
-    ``outcome`` field is the closed vocabulary ``attempt_terminated`` /
-    ``completed`` / ``blocked`` / ``running``; the ri classifier
-    branches on ``outcome == \"blocked\"``.
+    ``outcome`` field carries the supervisor's execution-level
+    state (see :data:\`pi_monitor.runtime.worker_outcomes.OUTCOMES\` for
+    the canonical vocabulary: \`submitted\` / \`no_delta\` /
+    \`blocked\` / \`failed\`). Typed as \`str\` so an unknown
+    future value parses without a wire boundary failure — the
+    ri classifier branches on \`outcome == \"blocked\"\` only.
+
+    The legacy docstring listed \`attempt_terminated\` /
+    \`completed\` / \`running\` as the vocabulary; those names
+    predate the supervisor rewrite and don't appear in
+    OUTCOMES.
     """
 
     outcome: str = ""

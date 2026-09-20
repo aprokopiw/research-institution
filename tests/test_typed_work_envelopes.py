@@ -4,7 +4,7 @@ The five opaque fields on a ``WorkRequest`` (``payload`` /
 ``execution_policy`` / ``session_policy`` / ``isolation`` /
 ``budget``) are source-owned. This test pins the typed-shape
 boundary at the research-institution side: the OS imports the
-Pydantic models from ``pi_monitor.work_envelopes`` via
+Pydantic models from ``pi_monitor.protocol.work_envelopes`` via
 ``contracts.source_decision`` and exposes a one-shot parser
 (:func:`parse_work_request_envelopes`) so every consumer sees a
 strict shape, not ``dict[str, object]``.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from pi_monitor.work_source import SourceRevision, WorkRequest
+from pi_monitor.work.work_source import SourceRevision, WorkRequest
 
 from research_institution.contracts.source_decision import (
     TypedBudgetPolicy,
@@ -55,7 +55,7 @@ class TypedEnvelopeReExportsTests(unittest.TestCase):
         # same class objects as the canonical ones in pi_monitor.
         # A drift in pi_monitor's wire shape surfaces at every
         # import site in research-institution.
-        from pi_monitor.work_envelopes import (
+        from pi_monitor.protocol.work_envelopes import (
             BudgetPolicy as PM_Budget,
             ExecutionPolicy as PM_Execution,
             IsolationPolicy as PM_Isolation,

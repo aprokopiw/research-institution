@@ -24,7 +24,7 @@ dependencies = [
   "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@main",
   # pi-monitor is a runtime dep: the institution's typed-envelope
   # surface (``research_institution.contracts.source_decision``)
-  # re-exports ``pi_monitor.work_source.{Dispatch, Wait,
+  # re-exports ``pi_monitor.work.work_source.{Dispatch, Wait,
   # OperatorRequired, Stop, WorkRequest, SourceRevision}`` directly,
   # so isinstance checks and dataclass identity hold across the
   # boundary. ADR-0007 + Constitution Principle III make pi-monitor
