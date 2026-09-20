@@ -52,13 +52,6 @@ def _fake_program(name: str = "x", *, creds: tuple[str, ...] = ()) -> Program:
 # ---------------------------------------------------------------------------
 
 
-def test_institution_dir_requires_env_var(tmp_path: Path) -> None:
-    """Empty env raises a clear RuntimeError naming the missing var."""
-    env = FakeEnvironment(values={})
-    with pytest.raises(RuntimeError, match="MATHLINT_INSTITUTION_DIR"):
-        institution_dir(env)
-
-
 def test_institution_dir_rejects_non_directory(tmp_path: Path) -> None:
     """Env points at a non-directory -> RuntimeError."""
     env = FakeEnvironment(values={"MATHLINT_INSTITUTION_DIR": "/nonexistent/xyz"})
@@ -75,6 +68,37 @@ def test_institution_dir_in_production(tmp_path: Path, monkeypatch) -> None:
     """When called without env, reads from os.environ via default_environment()."""
     monkeypatch.setenv("MATHLINT_INSTITUTION_DIR", str(tmp_path))
     assert institution_dir() == tmp_path
+
+
+def test_institution_dir_falls_back_to_catalog_marker(tmp_path: Path, monkeypatch) -> None:
+    """Empty env + cwd has catalog/programs.toml -> resolve to cwd's repo root.
+
+    The fallback covers the common case where the operator `cd`s into
+    the repo and runs the dispatcher without exporting the env var.
+    Mutation-test oracle: a regression that drops the fallback would
+    force operators to set MATHLINT_INSTITUTION_DIR for every fresh
+    shell, which is the kind of fragility this skill targets.
+    """
+    repo_root = tmp_path
+    (repo_root / "catalog").mkdir()
+    (repo_root / "catalog" / "programs.toml").write_text("[[programs]]\n")
+    sub = repo_root / "tests" / "deep"
+    sub.mkdir(parents=True)
+    monkeypatch.delenv("MATHLINT_INSTITUTION_DIR", raising=False)
+    monkeypatch.chdir(sub)
+    env = FakeEnvironment(values={})
+    assert institution_dir(env) == repo_root
+
+
+def test_institution_dir_raises_when_no_env_and_no_marker(tmp_path: Path, monkeypatch) -> None:
+    """Empty env + cwd has no catalog marker -> actionable RuntimeError."""
+    isolated = tmp_path / "isolated"
+    isolated.mkdir()
+    monkeypatch.delenv("MATHLINT_INSTITUTION_DIR", raising=False)
+    monkeypatch.chdir(isolated)
+    env = FakeEnvironment(values={})
+    with pytest.raises(RuntimeError, match="MATHLINT_INSTITUTION_DIR"):
+        institution_dir(env)
 
 
 # ---------------------------------------------------------------------------

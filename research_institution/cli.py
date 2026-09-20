@@ -14,6 +14,7 @@ not require a cross-repo mathlint change.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -44,6 +45,13 @@ from research_institution.paths import (
 from research_institution.status import (
     format_headline,
     read_status_headline,
+)
+from research_institution.supervisor import (
+    probe_default_supervisor,
+)
+from research_institution.health import (
+    format_health,
+    run_health,
 )
 
 app = typer.Typer(
@@ -196,6 +204,10 @@ def check_gate(prog: Program, mathlint_bin: str = "mathlint", cwd: Optional[Path
 # Exit code for `research start` when the gate is closed.
 EXIT_GATE_CLOSED = 5
 
+# Exit code for `research start` when a supervisor is already
+# running for this config (idempotent refusal; see supervisor probe).
+EXIT_ALREADY_RUNNING = 6
+
 
 @app.command("list")
 def list_cmd() -> None:
@@ -235,28 +247,85 @@ def start(
         "--skip-gate",
         help="Skip the architecture-review gate check (operator override; logs the override).",
     ),
+    mode: str = typer.Option(
+        "autonomous",
+        "--mode",
+        help=(
+            "Launch mode. 'autonomous' spawns `pi-monitor run --config <cfg>` "
+            "directly (the long-running supervisor that watches the roadmap and "
+            "dispatches workers; no mathlint preflight required). 'durable' spawns "
+            "`mathlint live-run --confirm-live` (one bounded paired run that "
+            "produces a receipt; requires the live preflight to be green)."
+        ),
+    ),
 ) -> None:
     """Start one program.
 
-    Per @ADR-0006 + B.1.2, refuses to launch while the architecture-review
-    gate is closed. The gate verdict is read from `mathlint roadmap`
-    output (`TASK KIND: ARCHITECTURE_REVIEW_REQUIRED` ⇒ closed).
-    Override with `--skip-gate` (logged).
+    Two modes:
 
-    Dry-run (`--dry-run`) skips BOTH the gate check and credential check;
-    it only shows what would happen.
+    \b
+    - autonomous (default): spawn `pi-monitor run --config <cfg>` directly.
+      This is the long-running supervisor that monitors the roadmap and
+      dispatches workers. It does NOT require the mathlint preflight (no
+      paired-smoke receipt, no math check, no model credential). It DOES
+      require the architecture-review gate to be OPEN (refuse with --skip-gate).
+
+    \b
+    - durable: spawn `mathlint live-run --confirm-live`. One bounded paired
+      run that produces a receipt. Requires the full live preflight (gate,
+      receipt, model creds, postgres, math check).
+
+    Both modes refuse to spawn a duplicate when a supervisor is already
+    running for this config (idempotency). Use `research stop <program>`
+    first if you want to restart.
+
+    Per @ADR-0006 + B.1.2, refuses to launch while the architecture-review
+    gate is closed. Override with `--skip-gate` (logged).
     """
+    if mode not in {"autonomous", "durable"}:
+        typer.echo(f"FATAL: --mode must be 'autonomous' or 'durable'; got {mode!r}", err=True)
+        raise typer.Exit(code=2)
     prog = _require_program(program)
     if not prog.resolved_local_path.is_dir():
         typer.echo(f"FATAL: program local_path missing: {prog.resolved_local_path}", err=True)
         raise typer.Exit(code=3)
 
     if dry_run:
-        typer.echo(f"would launch: {prog.name} (local_path={prog.resolved_local_path})")
-        typer.echo("would delegate to: mathlint live-run --confirm-live")
-        typer.echo(f"would require credentials: {[v for v in prog.live_credential_env_vars] or '(none)'}")
+        typer.echo(f"would launch: {prog.name} (mode={mode}, local_path={prog.resolved_local_path})")
+        if mode == "autonomous":
+            cfg = pi_monitor_config_path()
+            typer.echo(f"would delegate to: pi-monitor run --config {cfg}")
+            typer.echo("(no mathlint preflight; this is the autonomous-supervision path)")
+        else:
+            typer.echo("would delegate to: mathlint live-run --confirm-live")
+            typer.echo(f"would require credentials: {[v for v in prog.live_credential_env_vars] or '(none)'}")
         typer.echo("would check architecture-review gate: yes (read-only roadmap parse)")
+        # For --dry-run, also surface whether a supervisor is already
+        # up so the operator sees the full picture without spawning.
+        state = probe_default_supervisor()
+        if state.is_alive:
+            typer.echo(f"current state: supervisor already running (pid {state.supervisor_pid})")
+        else:
+            typer.echo("current state: no supervisor running")
         return
+
+    # Idempotency: if a supervisor is already up for this config,
+    # refuse to spawn a duplicate. `mathlint live-run` does NOT
+    # check for an existing supervisor (postmortem B.1.2 risk).
+    # Detect via `pi-monitor status --config <cfg>` + PID liveness.
+    state = probe_default_supervisor()
+    if state.is_alive:
+        typer.echo(
+            f"supervisor already running (pid {state.supervisor_pid}); "
+            f"refusing to spawn a duplicate.",
+            err=True,
+        )
+        typer.echo(
+            "  hint: research status <program> for the headline; "
+            "research stop <program> to shut it down.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_ALREADY_RUNNING)
 
     # Architecture-review gate (B.1.2). Skipped only with explicit
     # --skip-gate. The verdict is read-only and lock-free; safe to run
@@ -278,27 +347,91 @@ def start(
     else:
         typer.echo("WARN: --skip-gate passed; architecture-review gate bypassed", err=True)
 
-    # Credential check.
+    # Credential check is required for BOTH modes (the worker + judge
+    # both call `pi` which needs OAuth via @ADR-0001).
     if prog.live_credentials_required:
         missing = missing_credentials(prog)
         if missing:
             typer.echo(f"FATAL: missing credential env var(s): {', '.join(missing)}", err=True)
             raise typer.Exit(code=4)
 
-    mathlint = _which_or_die("mathlint")
-    rc = subprocess.call([mathlint, "live-run", "--confirm-live"])
+    if mode == "durable":
+        mathlint = _which_or_die("mathlint")
+        rc = subprocess.call([mathlint, "live-run", "--confirm-live"])
+        raise typer.Exit(code=rc)
+
+    # mode == autonomous: spawn the supervisor directly. This is the
+    # long-running path that monitors the roadmap and dispatches
+    # workers; the mathlint preflight is irrelevant here because
+    # we are NOT producing a paired receipt.
+    pi_monitor = _which_or_die("pi-monitor")
+    cfg = pi_monitor_config_path()
+    typer.echo(f"spawning pi-monitor run --config {cfg}", err=True)
+    # Re-check immediately before spawn to close the small race window.
+    if probe_default_supervisor().is_alive:
+        typer.echo("(a supervisor started between the initial check and the spawn; reusing it)", err=True)
+        raise typer.Exit(code=0)
+    rc = subprocess.call([pi_monitor, "run", "--config", str(cfg)])
     raise typer.Exit(code=rc)
 
 
 @app.command("stop")
 def stop(
     program: str = typer.Argument(..., help="Program name from the catalog."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Send SIGKILL to the supervisor if SIGTERM does not stop it within 5s.",
+    ),
 ) -> None:
-    """Stop one program. Delegates to mathlint research-stop."""
+    """Stop one program's supervisor.
+
+    Two-step process:
+
+    1. Ask mathlint to persist an operator stop (`mathlint research-stop`).
+    2. If a supervisor is still running, send SIGTERM (or SIGKILL with --force).
+
+    Safe to run when no supervisor is active (no-op with a clear message).
+    """
     _require_program(program)
-    mathlint = _which_or_die("mathlint")
-    rc = subprocess.call([mathlint, "research-stop"])
-    raise typer.Exit(code=rc)
+    mathlint_bin = _which_or_die("mathlint")
+    subprocess.call([mathlint_bin, "research-stop"])
+    state = probe_default_supervisor()
+    if not state.is_alive:
+        typer.echo("no supervisor running; nothing to stop.", err=True)
+        raise typer.Exit(code=0)
+    pid = state.supervisor_pid
+    typer.echo(f"stopping supervisor (pid {pid}) via SIGTERM", err=True)
+    try:
+        os.kill(pid, 15)  # SIGTERM
+    except ProcessLookupError:
+        typer.echo(f"  pid {pid} already exited", err=True)
+        raise typer.Exit(code=0)
+    # Wait up to 5s for clean exit.
+    import time as _time
+    for _ in range(50):
+        _time.sleep(0.1)
+        if not _pid_alive_quick(pid):
+            typer.echo(f"  pid {pid} stopped", err=True)
+            raise typer.Exit(code=0)
+    if force:
+        typer.echo(f"  pid {pid} did not stop; sending SIGKILL", err=True)
+        try:
+            os.kill(pid, 9)  # SIGKILL
+        except ProcessLookupError:
+            pass
+        raise typer.Exit(code=0)
+    typer.echo(f"  pid {pid} did not stop within 5s; retry with --force", err=True)
+    raise typer.Exit(code=1)
+
+
+def _pid_alive_quick(pid: int) -> bool:
+    """Cheap PID liveness probe for the stop loop (signal 0, no error handling)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
 
 
 @app.command("status")
@@ -325,6 +458,86 @@ def status(
         raise typer.Exit(code=rc)
     headline = read_status_headline(program, pi_monitor_state_dir())
     typer.echo(format_headline(headline))
+
+
+@app.command("health")
+def health(
+    program: str = typer.Argument(..., help="Program name from the catalog."),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Print the full green-gate output in addition to the summary."
+    ),
+) -> None:
+    """One-shot diagnostic for the operator's startup readiness.
+
+    Runs every check the operator would otherwise discover by trial:
+    green-gate --hermetic (wiring), mathlint system-readiness
+    (live preflight), architecture-review gate, paired-smoke
+    receipt freshness, supervisor liveness.
+
+    For each failure prints the EXACT next command (copy-paste).
+    Exits 0 when fully ready, 1 when any check failed.
+    """
+    _require_program(program)
+    report = run_health(program)
+    typer.echo(format_health(report))
+    if verbose:
+        typer.echo("")
+        typer.echo("--- verbose: green-gate --hermetic ---")
+        gate = green_gate_path()
+        if gate.is_file():
+            subprocess.call(["bash", str(gate), "--hermetic"])
+        else:
+            typer.echo(f"(missing: {gate})")
+    raise typer.Exit(code=0 if report.is_healthy else 1)
+
+
+@app.command("restart")
+def restart(
+    program: str = typer.Argument(..., help="Program name from the catalog."),
+    mode: str = typer.Option(
+        "autonomous",
+        "--mode",
+        help="See `research start --help` for mode semantics.",
+    ),
+    skip_gate: bool = typer.Option(False, "--skip-gate", help="Pass through to `research start`."),
+) -> None:
+    """Atomic restart: stop the supervisor, then start it again.
+
+    Equivalent to `research stop <program>` followed by `research start
+    <program>`, but refuses to silently no-op if the stop fails (force
+    exit). Use this when you've changed the pi-monitor config and want
+    to reload, or when the supervisor has wedged.
+    """
+    # Use the existing stop logic but force-stop if needed.
+    _require_program(program)
+    state = probe_default_supervisor()
+    if state.is_alive:
+        typer.echo(f"restart: stopping supervisor (pid {state.supervisor_pid})", err=True)
+        # Inline stop with --force semantics.
+        mathlint_bin = _which_or_die("mathlint")
+        subprocess.call([mathlint_bin, "research-stop"])
+        try:
+            os.kill(state.supervisor_pid, 15)
+        except ProcessLookupError:
+            pass
+        import time as _time
+        for _ in range(50):
+            _time.sleep(0.1)
+            if not _pid_alive_quick(state.supervisor_pid):
+                break
+        if _pid_alive_quick(state.supervisor_pid):
+            typer.echo(f"  pid {state.supervisor_pid} did not stop; sending SIGKILL", err=True)
+            try:
+                os.kill(state.supervisor_pid, 9)
+            except ProcessLookupError:
+                pass
+        typer.echo("restart: stop done; starting", err=True)
+    # Now call start with the same args. We invoke the function
+    # directly (rather than shelling out) so the operator's shell
+    # sees consistent stdout/stderr.
+    start(
+        program=program, dry_run=False, skip_gate=skip_gate, mode=mode,
+    )
 
 
 @app.command("watch")

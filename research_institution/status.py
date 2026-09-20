@@ -60,10 +60,21 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 def _classify(health: dict[str, Any] | None, latest: dict[str, Any] | None) -> str:
     """Map the supervisor's state JSON to a canonical state string."""
+    import os as _os
     if health is None and latest is None:
         return "no-supervisor"
     health = health or {}
     latest = latest or {}
+    # If the state files claim a supervisor_pid but it doesn't
+    # respond to os.kill(pid, 0), the supervisor is actually dead
+    # (stale state file). Surface this BEFORE the other classifiers
+    # so the operator doesn't chase ghost "degraded" issues.
+    pid = health.get("supervisor_pid") or 0
+    if pid > 0:
+        try:
+            _os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError, OSError):
+            return "stopped"
     circuit = health.get("circuit", {})
     if circuit.get("open") or (circuit.get("trip_count", 0) or 0) > 0:
         return "circuit-open"

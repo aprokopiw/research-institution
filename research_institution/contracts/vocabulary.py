@@ -90,6 +90,7 @@ class ExitCode(StrEnum):
     CATALOG_ERROR = "3"
     CREDENTIAL_ERROR = "4"
     GATE_CLOSED = "5"
+    ALREADY_RUNNING = "6"
     BINARY_MISSING = "127"
 
 

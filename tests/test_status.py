@@ -126,6 +126,23 @@ def test_headline_stopped(tmp_path: Path) -> None:
     assert h.state == "stopped"
 
 
+def test_headline_stopped_when_supervisor_pid_is_dead(tmp_path: Path) -> None:
+    """State files say running, but the supervisor PID is dead.
+
+    The PID liveness check runs BEFORE the other classifiers so
+    operators don't chase ghost "degraded" issues. Mutation-test
+    oracle: dropping the `os.kill(pid, 0)` check would let stale
+    state hide a crashed supervisor.
+    """
+    health = _running_health(time.time())
+    health["supervisor_pid"] = 2_000_000_000  # guaranteed-dead PID
+    health["degraded"] = ["source_unavailable"]  # would otherwise say "degraded"
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(time.time()))
+    h = read_status_headline("kaplansky", tmp_path)
+    assert h.state == "stopped"
+
+
 def test_headline_no_supervisor_missing_dir(tmp_path: Path) -> None:
     h = read_status_headline("kaplansky", tmp_path / "does-not-exist")
     assert h.state == "no-supervisor"
