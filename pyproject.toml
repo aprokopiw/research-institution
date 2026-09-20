@@ -60,6 +60,10 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["research_institution"]
+# Include the PEP 561 ``py.typed`` marker so downstream packages
+# (math kernel, pi-monitor) can resolve inline annotations when
+# the institution is installed as a runtime dep.
+include = ["research_institution/py.typed"]
 
 # (research_institution/ is reserved for any future Python glue
 # this repo might need. Today the repo is scripts + docs + tests
@@ -112,7 +116,7 @@ reportUnknownVariableType = "error"
 reportUnknownMemberType = "error"
 reportUnknownParameterType = "error"
 reportMissingTypeArgument = "error"
-reportMissingTypeStubs = "none"  # pure-Python; no stub packages expected
+reportMissingTypeStubs = "error"
 reportImplicitOverride = "error"
 reportUnnecessaryTypeIgnoreComment = "error"
 reportUninitializedInstanceVariable = "error"

@@ -83,9 +83,10 @@ _DEFAULT_PROGRAM_ENTRY_POINTS: tuple[str, ...] = (
 )
 
 
-# Vocabulary pinned by @CTR-0094. Using a closed Literal-style set so
-# the runtime values are grep-able in the mathlint consumer code.
-_DISPATCH_KINDS = frozenset({"Dispatch", "Wait", "OperatorRequired", "Stop"})
+# Reason code vocabulary is pinned by REASON_WAIT_REQUESTED
+# (imported from research_institution.contracts.source_decision).
+# The closed set lives in the contracts module so every call site
+# shares one source of truth.
 
 
 def _read_revision(repo: Path) -> tuple[str, float]:
