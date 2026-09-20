@@ -56,12 +56,14 @@ class ProgramTomlEntry(BaseModel):
     @field_validator("live_credential_env_vars")
     @classmethod
     def _all_strs(cls, value: list[str]) -> list[str]:
-        """Reject non-string env-var names (TOML coerces, but typed wire)."""
-        for v in value:
-            if not isinstance(v, str):
-                raise ValueError(
-                    f"live_credential_env_vars entries must be strings; got {type(v).__name__}"
-                )
+        """Reject non-string env-var names (TOML coerces, but typed wire).
+
+        The list is declared ``list[str]`` so a non-string entry fails
+        at the Pydantic parse boundary (typed view). This validator
+        returns the value unchanged — it exists to pin the typed
+        contract in the wire model (defensive: TOML parsers may
+        coerce non-string env-var names to strings silently).
+        """
         return list(value)
 
     @field_validator("entry_point")
@@ -79,7 +81,5 @@ class ProgramTomlEntry(BaseModel):
 
 
 __all__ = [
-    "GIT_REF_RE",
-    "PROGRAM_NAME_RE",
     "ProgramTomlEntry",
 ]

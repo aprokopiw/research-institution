@@ -42,18 +42,15 @@ typed envelopes through the wire boundary.
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
 from pi_monitor.work_envelopes import (
     BudgetPolicy as WorkRequestBudgetPolicy,
-    DispatchPayload,
     ExecutionPolicy as WorkRequestExecutionPolicy,
     IsolationPolicy as WorkRequestIsolationPolicy,
     SessionPolicy as WorkRequestSessionPolicy,
-    WaitPayload,
     WorkRequestPayload,
 )
 from pi_monitor.work_source import (
