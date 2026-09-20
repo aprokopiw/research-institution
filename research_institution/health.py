@@ -18,6 +18,7 @@ import json
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypedDict, cast
 
 from research_institution.paths import (
     catalog_path,
@@ -58,6 +59,31 @@ class HealthReport:
     @property
     def failures(self) -> list[HealthCheck]:
         return [c for c in self.checks if not c.ok]
+
+
+# ---------------------------------------------------------------------------
+# Wire shape of mathlint's ``--preflight --json`` output. The shape is
+# defined by mathlint; we mirror it locally so the read side has full
+# static typing. Drift here is caught at parse time, not silently
+# passed through to the operator's suggestions list.
+# ---------------------------------------------------------------------------
+
+
+class PreflightCheckWire(TypedDict, total=False):
+    """One entry from mathlint preflight's ``checks`` list."""
+
+    id: str
+    name: str
+    status: str  # ``"pass"`` | ``"fail"`` | ``"skip"`` (closed in mathlint)
+    detail: str
+    suggestion: str
+
+
+class PreflightPayload(TypedDict, total=False):
+    """Top-level wire shape returned by mathlint preflight --json."""
+
+    ok: bool
+    checks: list[PreflightCheckWire]
 
 
 def _run_hermetic_green_gate() -> HealthCheck:
@@ -132,9 +158,14 @@ def _run_live_preflight() -> HealthCheck:
         )
     # rc != 0 from system-readiness means at least one check failed;
     # the JSON body is still emitted. Only treat as a mathlint
-    # failure if the JSON doesn't parse.
+    # failure if the JSON doesn't parse. The dynamic JSON boundary
+    # lives here; below this point the payload is typed as
+    # ``PreflightPayload``.
     try:
-        payload = json.loads(completed.stdout) if completed.stdout.strip() else None
+        payload = cast(
+            "PreflightPayload | None",
+            json.loads(completed.stdout) if completed.stdout.strip() else None,
+        )
     except json.JSONDecodeError:
         last_err = ""
         for stream in (completed.stdout, completed.stderr):
@@ -160,7 +191,7 @@ def _run_live_preflight() -> HealthCheck:
             summary="mathlint system-readiness produced no output",
             suggestion="check that math is installed and on PATH",
         )
-    checks: list[dict[str, object]] = payload.get("checks") or []
+    checks: list[PreflightCheckWire] = payload.get("checks") or []
     failed = [c for c in checks if c.get("status") == "fail"]
     if not failed:
         return HealthCheck(

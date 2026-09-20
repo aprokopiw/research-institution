@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, cast
 
 
 class ProgramState(StrEnum):
@@ -53,6 +53,47 @@ ProgramStateLiteral = Literal[
 ]
 
 
+# ---------------------------------------------------------------------------
+# Supervisor state payload shape (TypedDict)
+#
+# Both ``health.json`` and ``latest.json`` are produced by pi_monitor and
+# read by this module. They share a common ``execution`` sub-record;
+# ``health.json`` adds ``circuit`` + ``degraded`` + ``supervisor_pid``.
+# These TypedDicts replace the previous ``dict[str, Any]`` parameters.
+# ---------------------------------------------------------------------------
+
+
+class ExecutionPayload(TypedDict, total=False):
+    """Subset of the supervisor execution record shared by both files."""
+
+    outcome: str
+    attempt_ordinal: int
+    outcome_unix: float
+    active_key: str
+
+
+class HealthPayload(TypedDict, total=False):
+    """Wire shape of ``health.json`` as written by pi_monitor.
+
+    All fields are optional because the supervisor emits incrementally.
+    ``supervisor_pid`` may be ``None`` when the test fixture wants to
+    skip the liveness probe without setting a real PID.
+    """
+
+    supervisor_pid: int | None
+    audit: dict[str, object]
+    circuit: dict[str, object]
+    degraded: list[object]
+    execution: ExecutionPayload
+
+
+class LatestPayload(TypedDict, total=False):
+    """Wire shape of ``latest.json`` as written by pi_monitor."""
+
+    observed_unix: float
+    execution: ExecutionPayload
+
+
 @dataclass(frozen=True, slots=True)
 class StatusHeadline:
     """One-line summary of a program's supervisor state.
@@ -78,9 +119,23 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _truthy_int(value: object) -> int:
+    """Coerce an arbitrary JSON value to a non-negative int, defaulting to 0.
+
+    The supervisor's wire payloads treat missing keys as 0. Anything
+    that isn't a JSON number is reported as 0 rather than raising —
+    the classifier is robust-by-default to wire drift.
+    """
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
+
+
 def _classify(
-    health: dict[str, Any] | None,
-    latest: dict[str, Any] | None,
+    health: HealthPayload | None,
+    latest: LatestPayload | None,
     *,
     now: float | None = None,
 ) -> ProgramState:
@@ -100,16 +155,17 @@ def _classify(
     # respond to os.kill(pid, 0), the supervisor is actually dead
     # (stale state file). Surface this BEFORE the other classifiers
     # so the operator doesn't chase ghost "degraded" issues.
-    pid = health.get("supervisor_pid") or 0
+    pid_raw = health.get("supervisor_pid")
+    pid: int = pid_raw if isinstance(pid_raw, int) else 0
     if pid > 0:
         try:
             _os.kill(pid, 0)
         except (ProcessLookupError, PermissionError, OSError):
             return ProgramState.STOPPED
-    circuit = health.get("circuit", {})
-    if circuit.get("open") or (circuit.get("trip_count", 0) or 0) > 0:
+    circuit: dict[str, object] = health.get("circuit") or {}
+    if circuit.get("open") or _truthy_int(circuit.get("trip_count", 0)) > 0:
         return ProgramState.CIRCUIT_OPEN
-    degraded: list[object] = health.get("degraded") or []
+    degraded: list[object] = list(health.get("degraded") or [])
     if degraded:
         return ProgramState.DEGRADED
     execution = health.get("execution", {})
@@ -124,7 +180,7 @@ def _classify(
     return ProgramState.RUNNING
 
 
-def _uptime_seconds(latest: dict[str, Any] | None, *, now: float | None = None) -> float:
+def _uptime_seconds(latest: LatestPayload | None, *, now: float | None = None) -> float:
     """Return seconds elapsed since the supervisor's first observation.
 
     Uses `latest.observed_unix` (sample timestamp) as a proxy. For
@@ -143,7 +199,7 @@ def _uptime_seconds(latest: dict[str, Any] | None, *, now: float | None = None) 
     return max(0.0, anchor - float(obs))
 
 
-def _last_action(health: dict[str, Any] | None) -> str:
+def _last_action(health: HealthPayload | None) -> str:
     """Return a short human-readable string for the last action."""
     if health is None:
         return ""
@@ -177,8 +233,12 @@ def read_status_headline(
     Defaults to `time.time()`; tests inject a frozen `now` to
     pin staleness boundaries deterministically.
     """
-    health = _read_json(state_dir / "health.json")
-    latest = _read_json(state_dir / "latest.json")
+    # The JSON boundary lives at _read_json. The TypedDict cast here is
+    # honest because the pi_monitor writer produces a structurally
+    # compatible dict; any drift surfaces at runtime as KeyError/TypeError
+    # in _classify, not as a silent type-system lie.
+    health = cast("HealthPayload | None", _read_json(state_dir / "health.json"))
+    latest = cast("LatestPayload | None", _read_json(state_dir / "latest.json"))
     return StatusHeadline(
         program=program,
         state=_classify(health, latest, now=now),

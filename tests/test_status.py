@@ -27,6 +27,8 @@ from research_institution.status import (
     StatusHeadline,
     format_headline,
     read_status_headline,
+    HealthPayload,
+    LatestPayload,
 )
 
 # A frozen wall-clock anchor for every test in this module.
@@ -34,12 +36,12 @@ from research_institution.status import (
 NOW = 1_767_225_600.0
 
 
-def _write_json(path: Path, payload: dict[str, object]) -> None:
+def _write_json(path: Path, payload: HealthPayload | LatestPayload | dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _running_health(now: float) -> dict[str, object]:
+def _running_health(now: float) -> HealthPayload:
     return {
         "audit": {"chain_breaks": 0},
         "circuit": {"open": False, "trip_count": 0, "soft_until_unix": 0.0},
@@ -53,7 +55,7 @@ def _running_health(now: float) -> dict[str, object]:
     }
 
 
-def _running_latest(now: float) -> dict[str, object]:
+def _running_latest(now: float) -> LatestPayload:
     return {"observed_unix": now}
 
 
