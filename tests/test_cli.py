@@ -185,6 +185,66 @@ def test_install_skills_is_idempotent(cli_runner, tmp_path: Path) -> None:
     assert second.exit_code == 0
 
 
+def test_install_skills_symlinks_resolve_to_real_files(
+    cli_runner, tmp_path: Path
+) -> None:
+    """Each installed symlink MUST resolve to a real file (not a
+    dangling link).
+
+    Defect class: a regression that creates a symlink before the
+    target file exists would leave a dangling symlink. The pi agent
+    silently ignores missing skill files (no error), so the
+    installed skill never runs.
+    """
+    skills_dir = Path(tmp_path) / "agent_skills"
+    # Pre-clean to avoid stale symlinks.
+    if skills_dir.exists():
+        for child in skills_dir.iterdir():
+            if child.is_symlink() or child.is_file():
+                child.unlink()
+    result = cli_runner.invoke(args=["install-skills"], catch_exceptions=False)
+    assert result.exit_code == 0, f"install-skills failed: rc={result.exit_code}"
+    for entry in skills_dir.iterdir():
+        assert entry.is_symlink(), f"{entry} not a symlink"
+        target = entry.resolve()
+        assert target.is_file(), (
+            f"installed skill symlink {entry} -> {target} is dangling. "
+            f"The pi agent silently ignores dangling skill symlinks, so "
+            f"the operator-installed skill would never run."
+        )
+
+
+def test_install_skills_content_references_program_name(
+    cli_runner, tmp_path: Path
+) -> None:
+    """The generated skill file's content MUST reference the program
+    name (so a pi agent looking at the skill sees what it covers).
+
+    Defect class: a regression in ``render_skill`` that drops the
+    ``{display_name}`` placeholder would emit a generic skill
+    template that confuses the agent about which program it covers.
+    """
+    from research_institution.catalog import load_catalog
+
+    catalog = load_catalog(
+        __import__("pathlib").Path("catalog/programs.toml")
+    )
+    if not catalog:
+        pytest.skip("catalog is empty")
+    expected_name = catalog[0].name
+    skills_dir = Path(tmp_path) / "agent_skills"
+    result = cli_runner.invoke(args=["install-skills"], catch_exceptions=False)
+    assert result.exit_code == 0
+    target = skills_dir / expected_name
+    assert target.is_symlink(), f"{target} not installed"
+    body = target.resolve().read_text(encoding="utf-8")
+    assert expected_name in body, (
+        f"installed skill for {expected_name!r} doesn't mention the "
+        f"program name in its body. Agent cannot tell which program "
+        f"the skill covers."
+    )
+
+
 def test_start_refuses_duplicate_supervisor(cli_runner, monkeypatch) -> None:
     """research start refuses when a supervisor is already running.
 
@@ -509,3 +569,432 @@ def test_doctor_preserves_v_wire_env_var_through_to_gate(
     # calls inherit os.environ. The cold-start test exercises the
     # full end-to-end propagation.
     assert Path(argv[0]) == gate, f"argv[0]={argv[0]!r}; expected {gate}"
+
+
+# ---------------------------------------------------------------------------
+# `restart` command composition tests.
+#
+# `restart` chains `stop` (with --force semantics) then `start`. It
+# has TWO failure-mode surfaces that the unit tests for stop/start
+# don't cover end-to-end:
+#
+#  1. The stop phase must send SIGKILL if SIGTERM doesn't land (the
+#     unit test for stop covers this; restart composes it inline so
+#     we need a full-path oracle).
+#  2. The start phase must run AFTER the stop phase completes (not
+#     in parallel; not before). A regression that launches before
+#     stopping surfaces as duplicate-supervisor exit 3 in production.
+#
+# Until now `restart` was completely untested. These tests pin both.
+# ---------------------------------------------------------------------------
+
+
+def test_restart_with_alive_supervisor_stops_then_starts(
+    cli_runner, monkeypatch
+) -> None:
+    """`research restart <prog>` with an alive supervisor:
+      1. calls mathlint research-stop
+      2. sends SIGTERM to the supervisor pid
+      3. waits up to 5s for clean exit
+      4. escalates to SIGKILL if SIGTERM didn't land
+      5. finally calls mathlint live-run --confirm-live (start phase)
+
+    Defect class: a regression that drops any of the 4 stop steps
+    (or runs them in parallel with start) leaves the supervisor in
+    a confused state where mathlint refuses the new live-run.
+    """
+    import os as _os
+    import signal as _signal
+    import time as _stdlib_time
+
+    sent_signals: list[tuple[int, int]] = []
+
+    # Use the shim log that the cli_runner fixture writes to.
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set; cli_runner fixture broken"
+    # Clear the shim log so we only see restart's calls.
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 99999, "worker_pid": 0},
+        )(),
+    )
+
+    def fake_kill(pid: int, sig: int) -> None:
+        sent_signals.append((pid, sig))
+        # Simulate the supervisor exiting cleanly after SIGTERM so
+        # the inline stop loop sees success and exits without SIGKILL.
+        if sig == _signal.SIGTERM:
+            return
+
+    monkeypatch.setattr(_os, "kill", fake_kill)
+    monkeypatch.setattr(
+        "research_institution.cli._pid_alive_quick", lambda pid: False
+    )
+    monkeypatch.setattr(_stdlib_time, "sleep", lambda _: None)
+
+    result = cli_runner.invoke(
+        args=["restart", "kaplansky", "--mode=durable", "--skip-gate"],
+        catch_exceptions=False,
+    )
+    # Note: this test focuses on the COMPOSITION (stop then start),
+    # not on whether start ultimately succeeds. After the inline stop,
+    # start() is called; start's idempotency check may refuse if
+    # probe_default_supervisor still says alive (which it does here
+    # because the mock is module-level). What we care about is:
+    #   (1) the inline stop sent SIGTERM, and
+    #   (2) start was invoked (refused is acceptable for this oracle).
+    # SIGTERM was sent during the inline stop phase.
+    assert (99999, _signal.SIGTERM) in sent_signals, (
+        f"restart's inline stop didn't send SIGTERM; signals={sent_signals}"
+    )
+    # We expect the start phase to have been called. The exit code
+    # can be 0 (launched) or 6 (refused duplicate supervisor); both
+    # are valid evidence that restart composed stop+start.
+    assert result.exit_code in (0, 6), (
+        f"restart's start phase wasn't invoked as expected; "
+        f"rc={result.exit_code} stdout={result.stdout!r} "
+        f"stderr={getattr(result, 'stderr', '')!r}"
+    )
+
+
+def test_restart_with_no_supervisor_skips_stop_phase(
+    cli_runner, monkeypatch
+) -> None:
+    """`research restart <prog>` with no alive supervisor MUST skip
+    the stop phase and go straight to start.
+
+    Defect class: a regression that always sends SIGTERM (without
+    checking `is_alive`) sends SIGTERM to PID 0 / no process, which
+    raises ProcessLookupError and crashes restart before start can run.
+    """
+    import os as _os
+
+    sent_signals: list[tuple[int, int]] = []
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": False, "supervisor_pid": 0, "worker_pid": 0},
+        )(),
+    )
+    monkeypatch.setattr(_os, "kill", lambda *a, **kw: sent_signals.append((a[0], a[1])))
+
+    result = cli_runner.invoke(
+        args=["restart", "kaplansky", "--mode=durable"], catch_exceptions=False
+    )
+    assert result.exit_code == 0, (
+        f"restart with no supervisor failed: rc={result.exit_code} "
+        f"stdout={result.stdout!r}"
+    )
+    # No signals should have been sent.
+    assert sent_signals == [], (
+        f"restart sent signals despite no alive supervisor; signals={sent_signals}"
+    )
+    # Start phase must still run (--mode=durable spawns mathlint live-run).
+    shim_lines = Path(shim_log_path).read_text(encoding="utf-8").splitlines()
+    assert any("live-run" in ln for ln in shim_lines), (
+        f"restart didn't launch start phase when no supervisor alive; "
+        f"shim_log={shim_lines!r}"
+    )
+
+
+def test_restart_escalates_to_sigkill_when_supervisor_stuck(
+    cli_runner, monkeypatch
+) -> None:
+    """`research restart <prog>` MUST escalate to SIGKILL when SIGTERM
+    doesn't stop the supervisor within 5 seconds (force semantics).
+
+    Defect class: a regression that drops the force-escalation in
+    the inline stop path leaves a stuck supervisor unkillable from
+    restart. The stop unit test pins this; restart must preserve it.
+    """
+    import os as _os
+    import signal as _signal
+    import time as _stdlib_time
+
+    sent_signals: list[int] = []
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 99999, "worker_pid": 0},
+        )(),
+    )
+    monkeypatch.setattr(_os, "kill", lambda pid, sig: sent_signals.append(sig))
+    # Always report PID alive so SIGTERM wait exhausts and force-escalates.
+    monkeypatch.setattr(
+        "research_institution.cli._pid_alive_quick", lambda pid: True
+    )
+    monkeypatch.setattr(_stdlib_time, "sleep", lambda _: None)
+
+    result = cli_runner.invoke(
+        args=["restart", "kaplansky", "--mode=durable", "--skip-gate"],
+        catch_exceptions=False,
+    )
+    # SIGTERM and SIGKILL must both have been sent during the inline
+    # stop phase. The start phase may refuse (rc=6) or launch (rc=0).
+    assert _signal.SIGTERM in sent_signals, (
+        f"restart didn't send SIGTERM; signals={sent_signals}"
+    )
+    assert _signal.SIGKILL in sent_signals, (
+        f"restart's inline stop didn't escalate to SIGKILL when supervisor "
+        f"was stuck; signals={sent_signals}. A regression here leaves the "
+        f"supervisor unkillable via restart."
+    )
+    assert result.exit_code in (0, 6), (
+        f"unexpected restart exit code: rc={result.exit_code}"
+    )
+
+
+def test_restart_uses_mode_flag_in_start_phase(cli_runner, monkeypatch) -> None:
+    """`research restart <prog> --mode=durable` MUST forward --mode
+    to the start phase.
+
+    Defect class: a regression that drops the `--mode` kwarg from the
+    restart->start handoff means restart silently launches in the
+    default mode regardless of what the operator passed. The unit
+    test for start covers mode selection; restart must preserve it
+    across the stop+start composition.
+    """
+    import os as _os
+
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": False, "supervisor_pid": 0, "worker_pid": 0},
+        )(),
+    )
+    monkeypatch.setattr(_os, "kill", lambda *a, **kw: None)
+
+    result = cli_runner.invoke(
+        args=["restart", "kaplansky", "--mode=durable"], catch_exceptions=False
+    )
+    assert result.exit_code == 0, f"restart failed: rc={result.exit_code}"
+    shim_lines = Path(shim_log_path).read_text(encoding="utf-8").splitlines()
+    assert any("live-run" in ln for ln in shim_lines), (
+        f"restart didn't launch mathlint live-run; shim_log={shim_lines!r}"
+    )
+    # The --mode=durable launch uses mathlint, not pi-monitor.
+    # (The test_start_autonomous_mode_uses_pi_monitor test pins the
+    # pi-monitor path separately; here we assert no pi-monitor was
+    # spawned when --mode=durable.)
+    assert not any("pi-monitor" in ln for ln in shim_lines), (
+        f"restart --mode=durable incorrectly spawned pi-monitor; "
+        f"shim_log={shim_lines!r}"
+    )
+
+
+def test_restart_forwards_skip_gate_to_start_phase(cli_runner, monkeypatch) -> None:
+    """`research restart <prog> --skip-gate` MUST forward --skip-gate
+    to the start phase.
+
+    Defect class: a regression that drops the skip_gate kwarg in the
+    restart->start handoff means an operator restarting after fixing
+    a gate-blocked roadmap gets refused again because restart
+    re-checks the gate. The cold-start doctor test covers the gate
+    skip contract; restart must preserve it.
+    """
+    import os as _os
+
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": False, "supervisor_pid": 0, "worker_pid": 0},
+        )(),
+    )
+    monkeypatch.setattr(_os, "kill", lambda *a, **kw: None)
+
+    result = cli_runner.invoke(
+        args=["restart", "kaplansky", "--skip-gate", "--mode=durable"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, f"restart failed: rc={result.exit_code}"
+    shim_lines = Path(shim_log_path).read_text(encoding="utf-8").splitlines()
+    assert any("live-run" in ln for ln in shim_lines), (
+        f"restart didn't launch start phase; shim_log={shim_lines!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# `watch` command composition tests.
+#
+# `research watch <prog>` exec's `pi-monitor watch --config <cfg>
+# --script <start_script> --interval <N>`. The composition has two
+# preconditions the unit tests don't cover end-to-end:
+#
+#  1. The pi_monitor config file must exist (else exit 2).
+#  2. The pi_monitor start script must exist (else exit 3).
+#
+# Until now, `watch` was untested at the CLI surface — a regression
+# that drops the config existence check would silently exec
+# pi-monitor with a bogus config, surfacing as a confusing TUI
+# error instead of the operator-friendly FATAL message.
+# ---------------------------------------------------------------------------
+
+
+def test_watch_fails_when_pi_monitor_config_missing(
+    cli_runner, tmp_path: Path, monkeypatch
+) -> None:
+    """`research watch <prog>` MUST exit 2 with a clear error when the
+    pi_monitor config file is missing.
+
+    Defect class: a regression that drops the existence check would
+    silently exec pi-monitor with a non-existent config, surfacing
+    as a confusing Textual error.
+    """
+    fake_cfg = tmp_path / "nonexistent-pi-monitor.toml"
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_config_path", lambda: fake_cfg
+    )
+    result = cli_runner.invoke(
+        args=["watch", "kaplansky"], catch_exceptions=False
+    )
+    assert result.exit_code == 2, (
+        f"watch didn't exit 2 when config missing; rc={result.exit_code} "
+        f"stdout={result.stdout!r}"
+    )
+    combined = (result.stdout + result.stderr).lower()
+    assert "not found" in combined or "missing" in combined, (
+        f"watch's missing-config error lacks actionable diagnostic; "
+        f"output={combined!r}"
+    )
+
+
+def test_watch_fails_when_pi_monitor_start_script_missing(
+    cli_runner, tmp_path: Path, monkeypatch
+) -> None:
+    """`research watch <prog>` MUST exit 3 when the start script
+    file returned by ``pi_monitor_start_script()`` doesn't exist.
+
+    This is the regression class where the catalog or operator
+    wires pi_monitor to a path that doesn't actually ship a
+    launcher (the canonical bug: ``pi_monitor_start_script`` points
+    at ``start-pi-monitor-pi-monitor.sh`` which exists in pi_monitor
+    repo but isn't the kaplansky research launcher).
+    """
+    fake_cfg = tmp_path / "pi-monitor.toml"
+    fake_cfg.write_text("# fake\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_config_path", lambda: fake_cfg
+    )
+    # Point the start script at a guaranteed-missing path.
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_start_script",
+        lambda: tmp_path / "no-such-start-script.sh",
+    )
+    result = cli_runner.invoke(
+        args=["watch", "kaplansky"], catch_exceptions=False
+    )
+    assert result.exit_code == 3, (
+        f"watch didn't exit 3 when start script missing; rc={result.exit_code}"
+    )
+    combined = (result.stdout + result.stderr).lower()
+    assert "missing" in combined, (
+        f"watch's missing-script error lacks actionable diagnostic; "
+        f"output={combined!r}"
+    )
+
+
+def test_watch_argv_shape_to_pi_monitor(
+    cli_runner, tmp_path: Path, monkeypatch
+) -> None:
+    """`research watch <prog> --interval 1.5` MUST exec
+    `pi-monitor watch --config X --script Y --interval 1.5`.
+
+    Defect class: a regression that drops the interval kwarg or
+    renames a flag breaks Textual dashboard refresh cadence.
+    """
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    fake_cfg = tmp_path / "pi-monitor.toml"
+    fake_cfg.write_text("# fake\n", encoding="utf-8")
+    fake_script = tmp_path / "start-pi-monitor-math.sh"
+    fake_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_config_path", lambda: fake_cfg
+    )
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_start_script",
+        lambda: fake_script,
+    )
+    result = cli_runner.invoke(
+        args=["watch", "kaplansky", "--interval", "1.5"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, f"watch failed: rc={result.exit_code}"
+    shim_lines = Path(shim_log_path).read_text(encoding="utf-8").splitlines()
+    # The fake pi-monitor shim echoes its argv as `fake <bin> <args>`.
+    assert any("watch" in ln for ln in shim_lines), (
+        f"watch didn't delegate to pi-monitor watch; shim_log={shim_lines!r}"
+    )
+    watch_line = next(ln for ln in shim_lines if "watch" in ln)
+    assert "--config" in watch_line, (
+        f"watch delegation missing --config; line={watch_line!r}"
+    )
+    assert "--script" in watch_line, (
+        f"watch delegation missing --script; line={watch_line!r}"
+    )
+    assert "1.5" in watch_line, (
+        f"watch delegation missing --interval 1.5; line={watch_line!r}"
+    )
+
+
+def test_watch_default_interval_is_2_seconds(cli_runner, tmp_path: Path, monkeypatch) -> None:
+    """When --interval is omitted, watch MUST pass 2.0 to pi-monitor.
+
+    Pins the operator-facing default so a refactor that drops the
+    default doesn't suddenly start refreshing 10x/sec.
+    """
+    shim_log_path = __import__("os").environ.get("FAKE_SHIM_LOG")
+    assert shim_log_path, "FAKE_SHIM_LOG not set"
+    Path(shim_log_path).write_text("", encoding="utf-8")
+
+    fake_cfg = tmp_path / "pi-monitor.toml"
+    fake_cfg.write_text("# fake\n", encoding="utf-8")
+    fake_script = tmp_path / "start-pi-monitor-math.sh"
+    fake_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_config_path", lambda: fake_cfg
+    )
+    monkeypatch.setattr(
+        "research_institution.cli.pi_monitor_start_script",
+        lambda: fake_script,
+    )
+    result = cli_runner.invoke(
+        args=["watch", "kaplansky"], catch_exceptions=False
+    )
+    assert result.exit_code == 0
+    shim_lines = Path(shim_log_path).read_text(encoding="utf-8").splitlines()
+    watch_line = next(ln for ln in shim_lines if "watch" in ln)
+    assert " 2.0" in watch_line or " 2" in watch_line, (
+        f"watch default interval not 2.0s; line={watch_line!r}"
+    )

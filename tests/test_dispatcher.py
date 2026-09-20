@@ -28,6 +28,7 @@ import pytest
 
 from research_institution.catalog import Program
 from research_institution.contracts import GateVerdictStatus, TaskKind
+from research_institution.contracts.gate_verdict import TASK_KIND_ABSENT
 from research_institution.dispatcher import (
     DEFAULT_POLICY,
     Dispatcher,
@@ -472,3 +473,121 @@ def test_read_gate_uses_program_local_path(tmp_path: Path) -> None:
     prog = _fake_program(tmp_path)
     d.read_gate(prog)
     assert runner.calls[0].cwd == str(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# stop_research failure-path tests.
+# ---------------------------------------------------------------------------
+
+
+def test_stop_research_propagates_nonzero_exit(tmp_path: Path) -> None:
+    """`stop_research` MUST surface a non-zero exit as ``result.ok=False``
+    (NOT as an exception).
+
+    Defect: a regression that raises on non-zero would crash the
+    restart command's inline stop path. Operators see a Python
+    traceback instead of "mathlint returned N".
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=2, stderr="FATAL: not running"))
+    d = Dispatcher(runner=runner)
+    result = d.stop_research()
+    assert result.ok is False
+    assert result.returncode == 2
+    assert "FATAL" in result.stderr
+
+
+def test_stop_research_forwards_cwd(tmp_path: Path) -> None:
+    """`stop_research` MUST forward `cwd` to the subprocess."""
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    d = Dispatcher(runner=runner)
+    d.stop_research(cwd=tmp_path)
+    assert runner.calls[0].cwd == str(tmp_path)
+
+
+def test_run_watch_uses_policy_watch_timeout(tmp_path: Path) -> None:
+    """`run_watch` MUST honor a custom `watch_timeout_seconds` policy.
+
+    Defect: a regression that uses `default_timeout_seconds` for
+    the TUI (which runs as long as the operator wants) would
+    silently kill the dashboard after 15s.
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    policy = SubprocessPolicy(watch_timeout_seconds=3600.0)
+    d = Dispatcher(runner=runner, policy=policy)
+    cfg = tmp_path / "monitor.toml"
+    script = tmp_path / "start.sh"
+    d.run_watch(cfg, script)
+    assert runner.calls[0].timeout == 3600.0
+
+
+def test_run_watch_propagates_extra_env() -> None:
+    """`run_watch` MUST merge `extra_env` into the subprocess env.
+
+    Defect: a regression that ignores `extra_env` (a documented
+    parameter) loses operator overrides like MATHLINT_MODEL_ROUTE
+    on the supervisor subprocess.
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    env = FakeEnvironment(values={})  # empty base env
+    d = Dispatcher(runner=runner, environment=env)
+    cfg = Path("/tmp/monitor.toml")  # noqa: S108
+    script = Path("/tmp/start.sh")  # noqa: S108
+    d.run_watch(cfg, script, extra_env={"MATHLINT_MODEL_ROUTE": "from-extra-env"})
+    assert runner.calls[0].env.get("MATHLINT_MODEL_ROUTE") == "from-extra-env"
+
+
+def test_read_gate_returns_open_when_roadmap_stdout_is_blank(
+    tmp_path: Path,
+) -> None:
+    """When `mathlint roadmap` exits 0 but stdout has NO `TASK KIND:`
+    line (legacy/empty roadmap), `read_gate` MUST return OPEN with
+    the documented ``(absent)`` sentinel.
+
+    Defect: a regression that raises on missing TASK KIND line
+    would crash every cold-start on a freshly-cloned kaplansky
+    repo with an empty roadmap.
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0, stdout=""))
+    d = Dispatcher(runner=runner)
+    v = d.read_gate(_fake_program(tmp_path))
+    assert v.status == GateVerdictStatus.OPEN
+    assert v.task_kind == TASK_KIND_ABSENT
+
+
+def test_read_gate_uses_program_when_local_path_missing(tmp_path: Path) -> None:
+    """`read_gate` MUST use the explicit `cwd` override when provided,
+    bypassing ``prog.resolved_local_path``.
+
+    Defect: a regression that ignores the `cwd` override would
+    force operators to `cd` into the program repo before reading
+    the gate, defeating the dispatcher's purpose.
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0, stdout=ROADMAP_OPEN))
+    d = Dispatcher(runner=runner)
+    other = tmp_path / "other"
+    other.mkdir()
+    d.read_gate(_fake_program(tmp_path), cwd=other)
+    assert runner.calls[0].cwd == str(other)
+
+
+def test_run_live_uses_default_timeout_when_no_policy(tmp_path: Path) -> None:
+    """Without a per-call timeout AND without a policy override,
+    `run_live` uses ``DEFAULT_POLICY.default_timeout_seconds``.
+
+    Defect: a regression that sets timeout to ``None`` when no
+    policy is given would let `run_live` hang indefinitely on a
+    wedged mathlint process.
+    """
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=0))
+    d = Dispatcher(runner=runner)
+    d.run_live()
+    assert runner.calls[0].timeout is not None
+    assert runner.calls[0].timeout == DEFAULT_POLICY.default_timeout_seconds
+

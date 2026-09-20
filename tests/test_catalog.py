@@ -128,3 +128,216 @@ def test_rejects_malformed_entry_point() -> None:
             cat_mod.load_catalog(fake_path)
     finally:
         fake_path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Catalog loader invariant oracles.
+#
+# test_catalog_consistent.py pins the *current* catalog against
+# catalog/schema.toml (read-side validation). This file pins the
+# loader's rejection of *invalid* catalogs (write-side validation).
+# Together they close the loop: a regression that drops one side
+# surfaces in the other.
+# ---------------------------------------------------------------------------
+
+
+def _write_tmp_catalog(tmp_path: Path, body: str) -> Path:
+    """Write a fake catalog TOML to tmp_path and return the path."""
+    p = tmp_path / "_catalog_test.toml"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_rejects_invalid_mathlint_pin(tmp_path: Path) -> None:
+    """`mathlint_pin` MUST match `^[A-Za-z0-9._/-]+$` (git ref shape).
+
+    Defect: a ref like `main; rm -rf ~` is rejected — preventing
+    shell injection via a typo'd pin field. A regression that
+    loosens the regex would silently accept unsafe values.
+    """
+    from research_institution import catalog as cat_mod
+
+    cases = [
+        "main; rm -rf ~",  # shell metacharacters
+        "v1.0\n[bad]",  # newline + table header
+        "",  # empty
+    ]
+    for bad_pin in cases:
+        body = (
+            '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+            'repository = "https://x"\nentry_point = "x:r"\n'
+            f'local_path = "/x"\nmathlint_pin = "{bad_pin}"\n'
+            "live_credentials_required = false\n"
+            "live_credential_env_vars = []\n"
+            'check_program_script = "x.sh"\n'
+        )
+        p = _write_tmp_catalog(tmp_path, body)
+        with pytest.raises(ValueError):
+            cat_mod.load_catalog(p)
+
+
+def test_rejects_check_program_script_without_sh_suffix(tmp_path: Path) -> None:
+    """`check_program_script` MUST end in `.sh`.
+
+    Defect: a regression that drops the suffix check lets
+    `check_program_script = "scripts/check"` slip through; the
+    green-gate then tries to `bash scripts/check` and fails with
+    a confusing error.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+        'repository = "https://x"\nentry_point = "x:r"\n'
+        'local_path = "/x"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = false\n"
+        "live_credential_env_vars = []\n"
+        'check_program_script = "scripts/check"\n'
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match=r"\.sh"):
+        cat_mod.load_catalog(p)
+
+
+def test_rejects_local_path_without_slash_or_home(tmp_path: Path) -> None:
+    """`local_path` MUST start with `/` or `$HOME`.
+
+    Defect: a regression that drops the absolute-path check lets
+    relative paths slip through; the green-gate then resolves them
+    against the wrong cwd and silently skips the program.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+        'repository = "https://x"\nentry_point = "x:r"\n'
+        'local_path = "relative/path"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = false\n"
+        "live_credential_env_vars = []\n"
+        'check_program_script = "x.sh"\n'
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match="must start with"):
+        cat_mod.load_catalog(p)
+
+
+def test_rejects_live_credential_env_vars_when_not_a_list(tmp_path: Path) -> None:
+    """`live_credential_env_vars` MUST be a list (not a string).
+
+    Defect: a regression that accepts a string `live_credential_env_vars =
+    "OPENAI_API_KEY"` would crash later when something does `for v in
+    prog.live_credential_env_vars`. Pin the type at load time.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+        'repository = "https://x"\nentry_point = "x:r"\n'
+        'local_path = "/x"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = true\n"
+        'live_credential_env_vars = "OPENAI_API_KEY"\n'
+        'check_program_script = "x.sh"\n'
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match="list"):
+        cat_mod.load_catalog(p)
+
+
+def test_rejects_empty_entry_point(tmp_path: Path) -> None:
+    """`entry_point` MUST be non-empty.
+
+    Defect: a regression that accepts empty entry_point lets a
+    catalog editor accidentally blank it out. The downstream
+    `parse_entry_point("")` would raise with a less actionable
+    message than the loader's pre-check.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+        'repository = "https://x"\nentry_point = ""\n'
+        'local_path = "/x"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = false\n"
+        "live_credential_env_vars = []\n"
+        'check_program_script = "x.sh"\n'
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError):
+        cat_mod.load_catalog(p)
+
+
+def test_rejects_duplicate_entry_point_final_segment(tmp_path: Path) -> None:
+    """Two entries with IDENTICAL `entry_point` strings MUST raise.
+
+    Cross-field invariant (per @ADR-0006 + schema comment): the
+    final segment of `entry_point` (after the last dot) identifies
+    the callable registered with mathlint.providers; collisions
+    would silently let one program override another's registration.
+
+    Note: as implemented, the check fires on ``entry_point.rsplit(".", 1)[-1]``,
+    which is the substring after the last dot. For entry points with
+    no dot at all (e.g. ``pkg:register``) the entire string is the
+    final segment, so only IDENTICAL strings collide. This test pins
+    that actual contract.
+
+    Defect: a regression that drops this check would let two
+    programs claim the same provider name. The cold-start doctor
+    prints GREEN INSTITUTION READY while mathlint uses whichever
+    entry point resolves last — a silent override.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "a"\ndisplay_name = "a"\n'
+        'repository = "https://a"\nentry_point = "shared.mod:register"\n'
+        'local_path = "/a"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = false\n"
+        "live_credential_env_vars = []\n"
+        'check_program_script = "a.sh"\n'
+        '[[programs]]\nname = "b"\ndisplay_name = "b"\n'
+        'repository = "https://b"\nentry_point = "shared.mod:register"\n'
+        'local_path = "/b"\nmathlint_pin = "v1"\n'
+        "live_credentials_required = false\n"
+        "live_credential_env_vars = []\n"
+        'check_program_script = "b.sh"\n'
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match="duplicate entry_point final segment"):
+        cat_mod.load_catalog(p)
+
+
+def test_load_catalog_missing_required_key_returns_actionable_error(
+    tmp_path: Path,
+) -> None:
+    """When a required key is missing, the loader MUST list the
+    missing keys in the error message.
+
+    Defect: a regression that raises a generic `ValueError` with no
+    missing-key list would force operators to diff the catalog
+    against the schema by hand.
+    """
+    from research_institution import catalog as cat_mod
+
+    body = (
+        '[[programs]]\nname = "x"\ndisplay_name = "x"\n'
+        'repository = "https://x"\nentry_point = "x:r"\n'
+        'local_path = "/x"\nmathlint_pin = "v1"\n'
+        # NOTE: live_credentials_required and live_credential_env_vars
+        # and check_program_script are all missing.
+    )
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match="missing keys"):
+        cat_mod.load_catalog(p)
+
+
+def test_load_catalog_rejects_empty_programs_table(tmp_path: Path) -> None:
+    """An empty `[[programs]]` table MUST raise (the catalog is
+    semantically empty, which is a misconfiguration not a no-op).
+    """
+    from research_institution import catalog as cat_mod
+
+    body = ""  # no [[programs]] at all
+    p = _write_tmp_catalog(tmp_path, body)
+    with pytest.raises(ValueError, match="non-empty"):
+        cat_mod.load_catalog(p)
+

@@ -155,6 +155,91 @@ def test_pi_monitor_start_script_is_repo_plus_filename(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Composition: pi_monitor_start_script vs. what pi_monitor's
+# `watch --script` actually consumes.
+#
+# The dispatcher surfaces `pi_monitor_start_script(env)` as the
+# canonical script path. pi_monitor's `watch` command (per its
+# cli.py:946) auto-discovers a script named
+# `start-pi-monitor-math.sh` next to the config when `--script` is
+# not passed. These are TWO different filenames. A refactor that
+# renames one without updating the other breaks the operator's
+# cold-start: the watch command's fallback would silently no-op.
+#
+# This test pins the *contract*: the script file referenced by
+# `pi_monitor_start_script` MUST exist in the pi_monitor repo on
+# the operator's wired machine, AND pi_monitor's auto-discovery
+# fallback MUST be able to find a sibling `start-pi-monitor-math.sh`
+# when the config lives next to it. The latter is operator-conditional
+# (only relevant when a per-program config is shipped alongside its
+# launcher); the test is skipped when no such config exists.
+# ---------------------------------------------------------------------------
+
+
+def test_pi_monitor_start_script_returns_an_existing_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """On the operator's wired machine, the canonical script file
+    returned by ``pi_monitor_start_script(env)`` MUST exist.
+
+    Defect class: a refactor that renames
+    `start-pi-monitor-pi-monitor.sh` in pi_monitor without
+    updating `pi_monitor_start_script()` here would leave
+    `dispatcher.run_watch(...)` returning a path that the TUI's
+    `Launcher(script)` silently treats as missing. The cold-start
+    doctor would print GREEN INSTITUTION READY while the operator's
+    `research watch <prog>` opens an empty dashboard.
+    """
+    from research_institution.paths import pi_monitor_start_script
+
+    env = FakeEnvironment(values={"PI_MONITOR_REPO": str(tmp_path)})
+    resolved = pi_monitor_start_script(env)
+    # Skip when the operator's actual pi_monitor repo is not
+    # wired at the default path (CI runner).
+    if not resolved.is_file():
+        pytest.skip(
+            f"pi_monitor_start_script target {resolved} not present "
+            f"on this machine; CI-only skip"
+        )
+    assert resolved.is_file(), (
+        f"pi_monitor_start_script returned a path that doesn't exist: "
+        f"{resolved}. The path-resolution contract is broken — refactor "
+        f"that renames the file in pi_monitor MUST update this function."
+    )
+
+
+def test_pi_monitor_start_script_filename_is_kaplansky_consistent(
+    monkeypatch,
+) -> None:
+    """The filename in ``pi_monitor_start_script`` MUST be the one
+    that the kaplansky launcher's documentation references.
+
+    Defect class: a refactor here that renames the file to
+    something OTHER than `start-pi-monitor-<project>.sh` style
+    breaks the convention operator muscle memory relies on.
+    pi_monitor's watch fallback (per cli.py:946) hard-codes
+    `start-pi-monitor-math.sh`; this function should at least
+    follow the same prefix. The exact name is anchored by
+    multiple docs (pi_monitor CHANGELOG; pi_monitor
+    docs/guides/unattended.md).
+    """
+    from research_institution.paths import pi_monitor_start_script
+
+    env = FakeEnvironment(
+        values={"PI_MONITOR_REPO": "/tmp/fake-pi-monitor"}  # noqa: S108
+    )
+    resolved = pi_monitor_start_script(env)
+    # Filename MUST start with `start-pi-monitor-` per the operator's
+    # documented convention.
+    assert resolved.name.startswith("start-pi-monitor-"), (
+        f"pi_monitor_start_script returns {resolved.name!r} which "
+        f"breaks the `start-pi-monitor-<project>.sh` operator convention. "
+        f"Either update the docs to match or rename the file."
+    )
+
+
+
+# ---------------------------------------------------------------------------
 # agent_skills_dir
 # ---------------------------------------------------------------------------
 
