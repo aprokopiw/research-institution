@@ -221,10 +221,11 @@ def read_status_headline(
     Defaults to `time.time()`; tests inject a frozen `now` to
     pin staleness boundaries deterministically.
     """
-    # The JSON boundary lives at _read_json. The TypedDict cast here is
-    # honest because the pi_monitor writer produces a structurally
-    # compatible dict; any drift surfaces at runtime as KeyError/TypeError
-    # in _classify, not as a silent type-system lie.
+    # The JSON boundary lives at _read_json. The typed parse is
+    # \`_parse_health\` / \`_parse_latest\` (Pydantic model_validate);
+    # a malformed wire document is dropped (the classifier must remain
+    # robust-by-default — missing or malformed health.json is "no
+    # supervisor", not "raise on transient state corruption").
     health: HealthPayload | None = None
     raw_health = _read_json(state_dir / "health.json")
     if raw_health is not None:

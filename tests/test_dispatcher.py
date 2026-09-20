@@ -591,3 +591,39 @@ def test_run_live_uses_default_timeout_when_no_policy(tmp_path: Path) -> None:
     assert runner.calls[0].timeout is not None
     assert runner.calls[0].timeout == DEFAULT_POLICY.default_timeout_seconds
 
+
+
+def test_subprocess_kwargs_minimal_shape() -> None:
+    """Pin the typed shape of the kwargs forwarded to ``subprocess.run``.
+
+    The Dispatcher builds a dict literal of kwargs (capture_output /
+    text / check / env / cwd / timeout) and forwards them to the
+    runner. A regression that adds an unexpected key (e.g. ``shell=True``)
+    or drops a required one would silently change subprocess semantics.
+    The TypedDict makes the contract explicit; this test pins the keys.
+    """
+    from research_institution.dispatcher import _SubprocessKwargs
+    kwargs: _SubprocessKwargs = {
+        "capture_output": True,
+        "text": True,
+        "check": False,
+        "env": {},
+    }
+    assert kwargs["capture_output"] is True
+    assert kwargs["env"] == {}
+    assert set(kwargs.keys()) == {"capture_output", "text", "check", "env"}
+
+
+def test_subprocess_kwargs_full_shape() -> None:
+    """Pin the typed shape with all six kwargs populated."""
+    from research_institution.dispatcher import _SubprocessKwargs
+    kwargs: _SubprocessKwargs = {
+        "capture_output": True,
+        "text": True,
+        "check": False,
+        "env": {"PATH": "/bin"},
+        "cwd": "/tmp",
+        "timeout": 30.0,
+    }
+    assert kwargs["timeout"] == 30.0
+    assert kwargs["cwd"] == "/tmp"

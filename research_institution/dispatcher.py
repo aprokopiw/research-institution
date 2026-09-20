@@ -50,7 +50,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol, TypedDict
 from collections.abc import Callable
 
 from research_institution.catalog import Program
@@ -110,6 +110,28 @@ def _default_runner(*args: object, **kwargs: object) -> subprocess.CompletedProc
     """Default subprocess runner. Type-annotated loosely to allow
     test fakes with arbitrary signatures."""
     return subprocess.run(*args, **kwargs)  # type: ignore[arg-type]
+
+
+class _SubprocessKwargs(TypedDict, total=False):
+    """Typed shape of the kwargs forwarded to ``subprocess.run``.
+
+    The Dispatcher builds these kwargs imperatively (one entry per
+    line) and forwards them as ``**kwargs`` to the runner. The
+    keys are a closed set (six fields); a TypedDict makes the
+    contract explicit so pyright sees the typed shape instead of
+    a generic ``dict[str, Any]``.
+
+    ``total=False`` because all fields are optional (e.g. ``cwd``
+    and ``timeout`` are set conditionally); the defaults are
+    provided by ``subprocess.run`` itself.
+    """
+
+    capture_output: bool
+    text: bool
+    check: bool
+    env: dict[str, str]
+    cwd: str
+    timeout: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,7 +408,13 @@ class Dispatcher:
             if inferred is not None:
                 run_env["MATHLINT_MODEL_ROUTE"] = inferred
 
-        kwargs: dict[str, Any] = {
+        # The kwargs are forwarded to ``subprocess.run``. The shape
+        # is closed (six fixed keys), but the static type was
+        # ``dict[str, Any]``; ``_SubprocessKwargs`` TypedDict makes
+        # the contract explicit (pyright sees the typed shape;
+        # ``spawn_kwargs`` builds it once with a single typed
+        # construction site).
+        kwargs: _SubprocessKwargs = {
             "capture_output": True,
             "text": True,
             "check": False,
