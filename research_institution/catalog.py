@@ -16,13 +16,31 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .catalog_types import ProgramTomlEntry
 
 # Catalog schema invariants. Mirrored from catalog/schema.toml; tests
-# enforce both stay in sync via tests/test_catalog.py.
-
+# enforce both stay in sync via tests/test_catalog.py. The Pydantic
+# wire model (:class:`catalog_types.ProgramTomlEntry`) is loaded
+# lazily by :func:`_parse_one`; importing it at module top would
+# force pydantic on every catalog import (and the green-gate bash
+# shim invokes the catalog via system Python where pydantic may
+# not be installed).
 _PROGRAM_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _GIT_REF_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+#: Lazy handle to :class:`catalog_types.ProgramTomlEntry`. Loaded
+#: on first :func:`_parse_one` call.
+_ProgramTomlEntry: type | None = None
+
+
+def _get_program_toml_entry() -> type:
+    global _ProgramTomlEntry
+    if _ProgramTomlEntry is None:
+        from .catalog_types import ProgramTomlEntry
+        _ProgramTomlEntry = ProgramTomlEntry
+    return _ProgramTomlEntry
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,8 +106,12 @@ def load_catalog(path: Path) -> list[Program]:
     raw_entries = data.get("programs")
     if not isinstance(raw_entries, list) or not raw_entries:
         raise ValueError(f"catalog at {path} must contain a non-empty [[programs]] table")
-    # tomllib returns list[dict[str, Any]]; narrow to the type we expose.
-    typed_entries: list[dict[str, object]] = raw_entries  # type: ignore[assignment]
+    # tomllib returns list[dict[str, Any]]; we re-type as
+    # list[dict[str, object]] because that's what the legacy
+    # ``_parse_one`` signature accepts (and matches the wire-model
+    # contract — ``ProgramTomlEntry.model_validate`` does the real
+    # shape check inside ``_parse_one``).
+    typed_entries: list[dict[str, object]] = list(raw_entries)  # type: ignore[assignment]
 
     programs: list[Program] = []
     seen_names: set[str] = set()
@@ -112,7 +134,21 @@ def load_catalog(path: Path) -> list[Program]:
 
 
 def _parse_one(entry: dict[str, object], idx: int) -> Program:
-    """Parse one [[programs]] entry into a Program dataclass."""
+    """Parse one [[programs]] entry into a Program dataclass.
+
+    Validates the wire shape through :class:`ProgramTomlEntry`
+    so a missing required field, a non-list
+    ``live_credential_env_vars``, or a malformed ``entry_point``
+    fails fast at the typed parse boundary (not deep in the
+    dataclass's ``__post_init__`` or a downstream consumer).
+
+    Falls back to the legacy hand-rolled validation path when
+    Pydantic is not available (e.g. system-Python invocations via
+    the green-gate bash shim where pydantic may not be installed).
+    The legacy path keeps the catalog loader functional in that
+    environment; typed validation is the canonical path when
+    Pydantic is present.
+    """
     required = (
         "name",
         "display_name",
@@ -126,12 +162,51 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
     )
     missing = [k for k in required if k not in entry]
     if missing:
+        # Preserve the legacy \"missing keys\" error message so the
+        # catalog loader's contract (and existing tests) stay stable;
+        # the Pydantic ValidationError below catches type mismatches.
         raise ValueError(f"missing keys: {missing}")
+    try:
+        ProgramTomlEntry_cls = _get_program_toml_entry()
+    except ImportError:
+        # Pydantic not available (system Python via the green-gate
+        # bash shim). Fall back to the legacy hand-rolled path so
+        # the catalog still loads.
+        return _parse_one_legacy(entry)
 
+    try:
+        typed = ProgramTomlEntry_cls.model_validate(entry)
+    except Exception as exc:
+        # Re-raise with a stable diagnostic; Pydantic's default
+        # ``ValidationError`` lists each malformed field but uses
+        # different surface wording than the legacy helper.
+        raise ValueError(f"entry failed validation: {exc}") from exc
+
+    return Program(
+        name=typed.name,
+        display_name=typed.display_name,
+        repository=typed.repository,
+        entry_point=typed.entry_point,
+        local_path=typed.local_path,
+        mathlint_pin=typed.mathlint_pin,
+        live_credentials_required=typed.live_credentials_required,
+        live_credential_env_vars=tuple(typed.live_credential_env_vars),
+        check_program_script=typed.check_program_script,
+    )
+
+
+def _parse_one_legacy(entry: dict[str, object]) -> Program:
+    """Legacy fallback when Pydantic is unavailable.
+
+    Used by the green-gate bash shim which runs via system
+    Python where pydantic may not be installed. The typed
+    Pydantic path (``_parse_one``) is the canonical entry
+    validator when Pydantic is present.
+    """
     creds_raw = entry["live_credential_env_vars"]
     creds_list: list[str] = []
     if isinstance(creds_raw, list):
-        for v in cast("list[object]", creds_raw):
+        for v in creds_raw:
             if isinstance(v, str):
                 creds_list.append(v)
             else:
@@ -141,9 +216,6 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
     else:
         raise ValueError("live_credential_env_vars must be a list")
 
-    # Validate entry_point shape at load time (per @ADR-0006 +
-    # contracts/entry_point.py). Shape-only; import-time validation
-    # is the green gate's job, not the catalog loader's.
     from research_institution.contracts.entry_point import parse_entry_point
 
     entry_point = str(entry["entry_point"])
