@@ -117,6 +117,7 @@ no import cycles) are pinned by `tests/test_package_boundary.py`.
 ## See also
 
 - `AGENTS.md` — prime directive + cold-start workflow.
+- `docs/concepts/architecture.md` — mental model: how the four repos fit together (kernel / orchestrator / driver / program).
 - `docs/operations/research-institution-quickstart.md` — operator's one-pager.
 - `docs/operations/dispatcher-cli-reference.md` — full `research <verb>` reference.
 - `docs/operations/bootstrap-and-cold-start.md` — fresh-checkout walkthrough.
