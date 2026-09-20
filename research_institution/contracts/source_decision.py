@@ -45,6 +45,15 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal, TypeAlias, TypedDict, cast
 
+from pi_monitor.work_envelopes import (
+    BudgetPolicy as WorkRequestBudgetPolicy,
+    DispatchPayload,
+    ExecutionPolicy as WorkRequestExecutionPolicy,
+    IsolationPolicy as WorkRequestIsolationPolicy,
+    SessionPolicy as WorkRequestSessionPolicy,
+    WaitPayload,
+    WorkRequestPayload,
+)
 from pi_monitor.work_source import (
     Dispatch,
     OperatorRequired,
@@ -146,6 +155,14 @@ class WorkRequestWireDict(TypedDict, total=False):
 
     All optional fields default to ``"default"`` (role/workspace) or
     ``None`` on the typed side; on the wire they are omitted.
+
+    The five opaque fields (``payload`` / ``execution_policy`` /
+    ``session_policy`` / ``isolation`` / ``budget``) are source-
+    owned: their typed shapes are Pydantic models in
+    :mod:`pi_monitor.work_envelopes`. The wire-format JSON is
+    ``dict[str, Any]``; the typed shape is one ``.model_validate()``
+    away. See :func:`parse_work_request_wire` for the single
+    boundary that produces a typed :class:`WorkRequest`.
     """
 
     source_identity: str
@@ -378,6 +395,65 @@ def _parse_work_request(raw: dict[str, Any]) -> WorkRequest:
     )
 
 
+# ---------------------------------------------------------------------------
+# Typed-shape re-exports + parse helpers
+# ---------------------------------------------------------------------------
+
+#: Typed envelope for ``WorkRequest.payload``. The wire format is
+#: ``dict[str, Any]`` (the JSON serialization of the model);
+#: consumers that want strict typing parse with
+#: :class:`WorkRequestPayload.model_validate`.
+TypedWorkRequestPayload = WorkRequestPayload
+
+#: Typed envelope for ``WorkRequest.execution_policy``. Re-exported
+#: from :mod:`pi_monitor.work_envelopes` so consumers do not need to
+#: import from a third-party module to see the typed shape.
+TypedExecutionPolicy = WorkRequestExecutionPolicy
+
+#: Typed envelope for ``WorkRequest.session_policy``. See
+#: :data:`TypedExecutionPolicy` for the re-export rationale.
+TypedSessionPolicy = WorkRequestSessionPolicy
+
+#: Typed envelope for ``WorkRequest.isolation``. See
+#: :data:`TypedExecutionPolicy` for the re-export rationale.
+TypedIsolationPolicy = WorkRequestIsolationPolicy
+
+#: Typed envelope for ``WorkRequest.budget``. See
+#: :data:`TypedExecutionPolicy` for the re-export rationale.
+TypedBudgetPolicy = WorkRequestBudgetPolicy
+
+
+def parse_work_request_envelopes(
+    request: WorkRequest,
+) -> tuple[
+    WorkRequestPayload,
+    WorkRequestExecutionPolicy,
+    WorkRequestSessionPolicy,
+    WorkRequestIsolationPolicy,
+    WorkRequestBudgetPolicy,
+]:
+    """Validate every opaque field of one WorkRequest as its typed envelope.
+
+    Pure: a single ``.model_validate`` per field, no I/O. The
+    function is the canonical boundary between the supervisor's
+    untyped envelope (5 ``dict[str, object]`` fields) and the
+    consumer's typed view. Consumers that need strict typing call
+    this once on a request they own; callers that just want the
+    raw dicts continue to access ``request.payload`` directly.
+
+    A future source may add a new field to any envelope; because
+    each envelope has ``extra="allow"`` (per spec 004 wire-compat
+    discipline), this function never raises on unknown fields.
+    """
+    return (
+        WorkRequestPayload.model_validate(request.payload),
+        WorkRequestExecutionPolicy.model_validate(request.execution_policy),
+        WorkRequestSessionPolicy.model_validate(request.session_policy),
+        WorkRequestIsolationPolicy.model_validate(request.isolation),
+        WorkRequestBudgetPolicy.model_validate(request.budget),
+    )
+
+
 def decision_kind(decision: SourceDecision) -> DecisionKind:
     """Return the DecisionKind discriminator for a typed decision.
 
@@ -414,10 +490,16 @@ __all__ = [
     "SourceRevision",
     "SourceRevisionWireDict",
     "Stop",
+    "TypedBudgetPolicy",
+    "TypedExecutionPolicy",
+    "TypedIsolationPolicy",
+    "TypedSessionPolicy",
+    "TypedWorkRequestPayload",
     "Wait",
     "WorkRequest",
     "WorkRequestWireDict",
     "decision_kind",
     "parse_source_decision",
+    "parse_work_request_envelopes",
     "source_decision_to_wire",
 ]

@@ -19,6 +19,14 @@ This module wraps that probe so the dispatcher's start command can:
 All public functions are pure: they take an `Environment`-style
 abstraction or a `Path`/`subprocess.run`-style runner, both
 injectable from tests via ``tests/_fakes.py``.
+
+Spec 014 (typed-contract consolidation): ``status_payload`` is
+the typed :class:`pi_monitor.supervisor_status.SupervisorStatusPayload`
+re-exported here as :class:`SupervisorStatusPayload`. The
+dispatcher imports the canonical Pydantic model so a drift in
+pi-monitor's wire shape surfaces at every call site (the typed
+parse fails fast) rather than as a silent dict-vs-typed drift
+deep in a downstream consumer.
 """
 
 from __future__ import annotations
@@ -30,7 +38,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 
+from pi_monitor.supervisor_status import (
+    SupervisorStatusPayload as _TypedSupervisorStatusPayload,
+    parse_supervisor_status_payload as _parse_typed_status,
+)
 from research_institution.paths import pi_monitor_config_path
+
+#: Re-export of :class:`pi_monitor.supervisor_status.SupervisorStatusPayload`
+#: so research-institution consumers import the canonical type from a
+#: single name. Both sides see the same class identity; a drift in
+#: pi-monitor's wire shape surfaces here as a class-identity change
+#: that pyright flags at every import site.
+SupervisorStatusPayload = _TypedSupervisorStatusPayload
+
+__all__ = [
+    "SupervisorState",
+    "SupervisorStatusPayload",
+    "probe_default_supervisor",
+    "probe_supervisor",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,16 +65,18 @@ class SupervisorState:
 
     `is_alive` is the truth: it is True iff the supervisor PID
     from `pi-monitor status --config` actually responds to
-    `os.kill(pid, 0)`. `status_payload` is the parsed JSON from
-    `pi-monitor status` (the supervisor's own view of itself), or
-    None if the status command failed.
+    `os.kill(pid, 0)`. `status_payload` is the typed view of
+    `pi-monitor status` (the supervisor's own view of itself),
+    or None if the status command failed. Callers branch on
+    ``status_payload is None`` to detect a failed probe; the
+    typed model exposes typed fields when the probe succeeded.
     """
 
     config_path: Path
     supervisor_pid: int
     worker_pid: int
     is_alive: bool
-    status_payload: dict[str, object] | None = None
+    status_payload: SupervisorStatusPayload | None = None
 
 
 def _pid_alive(pid: int) -> bool:
@@ -110,7 +138,7 @@ def probe_supervisor(
             status_payload=None,
         )
     try:
-        payload = json.loads(completed.stdout)
+        raw_payload = json.loads(completed.stdout)
     except json.JSONDecodeError:
         return SupervisorState(
             config_path=config_path,
@@ -119,14 +147,31 @@ def probe_supervisor(
             is_alive=False,
             status_payload=None,
         )
-    supervisor_pid = int(payload.get("supervisor_pid") or 0)
-    worker_pid = int(payload.get("worker_pid") or 0)
+    # Spec 014: typed-contract consolidation. Parse the raw dict
+    # through the canonical Pydantic model so the dispatcher sees
+    # a strict shape. ``extra="allow"`` preserves any forward-
+    # compatible field pi-monitor may add; a malformed field
+    # surfaces here as a ValidationError that we coerce to a
+    # clean "no data" state so the dispatcher's hot path is
+    # never crashed by a supervisor wire drift.
+    try:
+        typed_payload = _parse_typed_status(raw_payload)
+    except Exception:
+        return SupervisorState(
+            config_path=config_path,
+            supervisor_pid=0,
+            worker_pid=0,
+            is_alive=False,
+            status_payload=None,
+        )
+    supervisor_pid = int(typed_payload.supervisor_pid or 0)
+    worker_pid = int(typed_payload.worker_pid or 0)
     return SupervisorState(
         config_path=config_path,
         supervisor_pid=supervisor_pid,
         worker_pid=worker_pid,
         is_alive=_pid_alive(supervisor_pid),
-        status_payload=payload,
+        status_payload=typed_payload,
     )
 
 

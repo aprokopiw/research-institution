@@ -105,7 +105,7 @@ def test_probe_supervisor_alive_pid(tmp_path: Path) -> None:
     assert state.supervisor_pid == os.getpid()
     assert state.worker_pid == 0
     assert state.status_payload is not None
-    assert state.status_payload["project"] == "x"
+    assert state.status_payload.project == "x"
 
 
 def test_probe_supervisor_dead_pid(tmp_path: Path) -> None:
