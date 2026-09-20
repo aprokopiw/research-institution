@@ -12,15 +12,26 @@ license = {text = "MIT"}
 authors = [
   {name = "Andrei Prokopiw", email = "aprokopiw@users.noreply.github.com"},
 ]
-# Runtime deps are intentionally empty: this repo is a thin
-# orchestrator. Each sub-check invokes a separate binary
-# (mathlint, pi-monitor, mathlint-kaplansky, etc.) that lives
-# in its own repo. Pip-installing research-institution does NOT
-# pull in math-engine, pi_monitor, or any research program —
-# that would create a hidden runtime dependency.
+# Runtime deps. The provider plugin (research-institution owns the
+# WorkSourceProvider slot per @ADR-0007) imports mathlint's
+# `program_providers` types at module load time. This is the
+# kernel/OS dependency: the OS imports the kernel's type system
+# but NOT any proof-program modules (@ADR-0014). All other
+# sub-checks still invoke mathlint as a separate subprocess;
+# the import here is purely for the provider registration API.
 dependencies = [
   "typer>=0.12",
+  "mathlint @ git+https://github.com/aprokopiw/kaplansky-research-program.git@main",
 ]
+
+# mathlint.providers entry point. Per @ADR-0007, research-institution
+# owns the WorkSourceProvider slot in mathlint. Mathlint's
+# discover_program_providers() loads the SOLE installed entry point
+# in this group. If both research-institution and kaplansky are
+# installed simultaneously, mathlint raises on collision; this
+# is intentional — one OS per machine.
+[project.entry-points."mathlint.providers"]
+research_institution = "research_institution.providers.research_institution_provider:register"
 
 # Dev deps pin the three sibling repos at their current versions.
 # When the institution grows its semantic-record catalogue to
