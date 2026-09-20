@@ -54,13 +54,14 @@ def parse_entry_point(entry_point: str) -> EntryPointSpec:
     Raises `ValueError` on malformed input (no `:`, empty module,
     empty callable, non-string).
 
-    The non-string guard is here for defensive runtime validation
-    even though the static type already declares ``str``: callers
-    that bridge untyped dynamic data (e.g. TOML ``dict[str, object]``
-    values from the catalog loader) may pass non-strings without a
-    pyright-visible type error. The guard rejects them loudly.
+    The non-string guard is intentional: callers may bridge
+    untyped dynamic data (TOML ``dict[str, object]`` values
+    from the catalog loader) and pass non-strings without a
+    pyright-visible type error. The guard rejects them loudly
+    with a precise diagnostic. Tests in
+    ``tests/test_entry_point_contract.py`` pin the contract.
     """
-    if not isinstance(entry_point, str):  # type: ignore[reportUnnecessaryIsinstance]  # defensive runtime guard for untyped-dynamic callers (TOML dict[str, object]); static type already declares str
+    if not isinstance(entry_point, str):
         raise ValueError(
             f"entry_point must be a string; got {type(entry_point).__name__}"
         )

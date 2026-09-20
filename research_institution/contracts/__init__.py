@@ -26,6 +26,7 @@ from research_institution.contracts.vocabulary import (  # noqa: E402
 from research_institution.contracts.gate_verdict import (  # noqa: E402
     GateVerdict,
     TASK_KIND_ABSENT,
+    TASK_KIND_ROADMAP_FAILED,
 )
 
 __all__ = [
@@ -34,6 +35,7 @@ __all__ = [
     "GateVerdict",
     "GateVerdictStatus",
     "TASK_KIND_ABSENT",
+    "TASK_KIND_ROADMAP_FAILED",
     "TaskKind",
     "gate_verdict_from_task_kind",
 ]

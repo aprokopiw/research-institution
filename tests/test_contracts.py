@@ -107,3 +107,57 @@ def test_unknown_task_kind_string_maps_to_other() -> None:
         TaskKind("SOMETHING_NEW")
     # The dispatcher's parser catches ValueError and falls back to OTHER.
     # This is a contract: the parser is total, never raises.
+
+
+def test_task_kind_absent_sentinel_canonical() -> None:
+    """TASK_KIND_ABSENT is the canonical sentinel for "no TASK KIND line".
+
+    A drift in the sentinel string breaks the dispatcher contract:
+    the diagnostic surfaces the literal value, so a typo at the
+    caller (defining a local "(absent)") would silently desync.
+    """
+    from research_institution.contracts import TASK_KIND_ABSENT
+
+    assert TASK_KIND_ABSENT == "(absent)"
+    # Sanity: not a TaskKind member (the sentinel is distinct from
+    # the enum so consumers can distinguish "no line emitted" from
+    # "explicit TaskKind.OTHER").
+    assert TASK_KIND_ABSENT not in {member.value for member in TaskKind}
+
+
+def test_task_kind_roadmap_failed_sentinel_canonical() -> None:
+    """TASK_KIND_ROADMAP_FAILED is the canonical sentinel for mathlint roadmap non-zero exit.
+
+    The dispatcher returns this sentinel when the roadmap subprocess
+    exits non-zero; the diagnostic surface shows it verbatim.
+    Promoting the sentinel to a module-level constant lets tests
+    pin the exact value (so a rename in the dispatcher doesn't
+    silently desync from a downstream contract test).
+    """
+    from research_institution.contracts import TASK_KIND_ROADMAP_FAILED
+
+    assert TASK_KIND_ROADMAP_FAILED == "(roadmap-failed)"
+    # Sanity: not a TaskKind member (same rationale as TASK_KIND_ABSENT).
+    assert TASK_KIND_ROADMAP_FAILED not in {member.value for member in TaskKind}
+
+
+def test_dispatcher_read_gate_uses_roadmap_failed_constant(tmp_path) -> None:
+    """:func:`research_institution.dispatcher.read_gate` flows
+    :data:`TASK_KIND_ROADMAP_FAILED` verbatim when mathlint roadmap
+    exits non-zero. Pin via behavior test using FakeEnvironment +
+    an injected runner that returns rc=1.
+    """
+    from research_institution.contracts import (
+        TASK_KIND_ROADMAP_FAILED,
+        GateVerdictStatus,
+    )
+    from research_institution.dispatcher import Dispatcher
+    from tests._fakes import FakeRunner, QueuedResponse
+    from tests.test_dispatcher import _fake_program
+
+    runner = FakeRunner()
+    runner.queue(QueuedResponse(returncode=1, stderr="mathlint: command not found"))
+    d = Dispatcher(runner=runner)
+    verdict = d.read_gate(_fake_program(tmp_path), timeout_seconds=5.0)
+    assert verdict.task_kind == TASK_KIND_ROADMAP_FAILED
+    assert verdict.status is GateVerdictStatus.UNKNOWN

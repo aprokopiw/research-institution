@@ -48,10 +48,15 @@ from research_institution.contracts.vocabulary import (
 _TASK_KIND_RE = re.compile(r"^TASK KIND:\s*(\S+)\s*$", re.MULTILINE)
 _REASON_LINE_RE = re.compile(r"^REASON:\s*(.+?)$", re.MULTILINE)
 
-# Sentinel used when roadmap produced no TASK KIND line at all.
-# Not a member of TaskKind so consumers can distinguish "explicit
-# TaskKind.OTHER" from "no line emitted" — useful for diagnostics.
+# Sentinels for "no parsed TaskKind", distinct from TaskKind.OTHER.
+# Centralized so consumers can distinguish:
+#   - TASK_KIND_ABSENT        — roadmap ran but emitted no TASK KIND line
+#   - TASK_KIND_ROADMAP_FAILED — roadmap subprocess itself failed (non-zero exit)
+#   - TaskKind.OTHER          — roadmap emitted an unrecognized TASK KIND value
+# The sentinel strings are documented in the dispatcher's read_gate()
+# docstring so the operator can decode the diagnostic.
 TASK_KIND_ABSENT = "(absent)"
+TASK_KIND_ROADMAP_FAILED = "(roadmap-failed)"
 
 
 @dataclass(frozen=True, slots=True)

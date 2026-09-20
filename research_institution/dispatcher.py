@@ -54,7 +54,11 @@ from typing import Protocol, TypedDict
 from collections.abc import Callable
 
 from research_institution.catalog import Program
-from research_institution.contracts import GateVerdict, GateVerdictStatus
+from research_institution.contracts import (
+    TASK_KIND_ROADMAP_FAILED,
+    GateVerdict,
+    GateVerdictStatus,
+)
 
 # A runner is anything with the signature of subprocess.run.
 # Tests inject fakes; production uses subprocess.run.
@@ -236,7 +240,7 @@ class Dispatcher:
         )
         if result.returncode != 0:
             return GateVerdict(
-                task_kind="(roadmap-failed)",
+                task_kind=TASK_KIND_ROADMAP_FAILED,
                 status=GateVerdictStatus.UNKNOWN,
                 reason=f"mathlint roadmap exited {result.returncode}",
                 raw_excerpt=(result.stderr or result.stdout)[-400:],
