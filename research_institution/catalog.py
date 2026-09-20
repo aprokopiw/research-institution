@@ -12,35 +12,41 @@ fixtures from `tests/fixtures/catalog.toml`.
 
 from __future__ import annotations
 
-import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .catalog_types import ProgramTomlEntry
+    from .catalog_types import GIT_REF_RE, PROGRAM_NAME_RE, ProgramTomlEntry
 
-# Catalog schema invariants. Mirrored from catalog/schema.toml; tests
-# enforce both stay in sync via tests/test_catalog.py. The Pydantic
-# wire model (:class:`catalog_types.ProgramTomlEntry`) is loaded
-# lazily by :func:`_parse_one`; importing it at module top would
-# force pydantic on every catalog import (and the green-gate bash
-# shim invokes the catalog via system Python where pydantic may
-# not be installed).
-_PROGRAM_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
-_GIT_REF_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
-#: Lazy handle to :class:`catalog_types.ProgramTomlEntry`. Loaded
-#: on first :func:`_parse_one` call.
-_ProgramTomlEntry: type | None = None
+# Catalog schema invariants are owned by the Pydantic wire model in
+# :mod:`research_institution.catalog_types`. The Pydantic wire parse
+# path (:func:`_parse_one` -> :func:`_get_program_toml_entry` ->
+# :class:`ProgramTomlEntry.model_validate`) is the canonical typed
+# parse. The legacy fallback (when pydantic is unavailable, e.g. the
+# green-gate bash shim on system Python) re-imports the regex
+# objects lazily so the dataclass's ``__post_init__`` check has one
+# source of truth with the Pydantic model.
 
 
 def _get_program_toml_entry() -> type:
-    global _ProgramTomlEntry
-    if _ProgramTomlEntry is None:
-        from .catalog_types import ProgramTomlEntry
-        _ProgramTomlEntry = ProgramTomlEntry
-    return _ProgramTomlEntry
+    """Lazy import of :class:`ProgramTomlEntry` (deferred to avoid
+    forcing pydantic on system-Python invocations via the green-gate
+    bash shim).
+    """
+    from .catalog_types import ProgramTomlEntry
+    return ProgramTomlEntry
+
+
+def _get_program_name_re():
+    from .catalog_types import PROGRAM_NAME_RE
+    return PROGRAM_NAME_RE
+
+
+def _get_git_ref_re():
+    from .catalog_types import GIT_REF_RE
+    return GIT_REF_RE
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,13 +80,30 @@ class Program:
         return self.resolved_local_path / self.check_program_script
 
     def __post_init__(self) -> None:
-        if not _PROGRAM_NAME_RE.match(self.name):
+        # Schema invariants are owned by the Pydantic wire model in
+        # :mod:`research_institution.catalog_types`; the legacy
+        # fallback path (when pydantic is unavailable, e.g. the
+        # green-gate bash shim on system Python) re-imports them
+        # lazily so the regex objects have one source of truth.
+        try:
+            program_name_re = _get_program_name_re()
+            git_ref_re = _get_git_ref_re()
+        except ImportError:
+            # Pydantic not available: fall back to a minimal local
+            # check (the legacy hand-rolled regex). The Pydantic
+            # path is the canonical wire parse; this fallback
+            # keeps the dataclass self-contained for system-Python
+            # invocations.
+            import re as _re
+            program_name_re = _re.compile(r"^[a-z][a-z0-9_-]*$")
+            git_ref_re = _re.compile(r"^[A-Za-z0-9._/-]+$")
+        if not program_name_re.match(self.name):
             raise ValueError(
-                f"program name {self.name!r} does not match {_PROGRAM_NAME_RE.pattern}"
+                f"program name {self.name!r} does not match {program_name_re.pattern}"
             )
-        if not _GIT_REF_RE.match(self.mathlint_pin):
+        if not git_ref_re.match(self.mathlint_pin):
             raise ValueError(
-                f"mathlint_pin {self.mathlint_pin!r} does not match {_GIT_REF_RE.pattern}"
+                f"mathlint_pin {self.mathlint_pin!r} does not match {git_ref_re.pattern}"
             )
         if not self.repository.startswith("https://"):
             raise ValueError(f"repository {self.repository!r} must be an https:// URL")

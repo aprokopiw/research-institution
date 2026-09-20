@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from .status_types import (
     HealthPayload as _HealthPayload,
@@ -49,13 +49,6 @@ class ProgramState(StrEnum):
     DEGRADED = "degraded"
     STOPPED = "stopped"
     NO_SUPERVISOR = "no-supervisor"
-
-
-#: Closed literal alias for tests + downstream code that wants
-#: to declare a state without importing the StrEnum.
-ProgramStateLiteral = Literal[
-    "running", "circuit-open", "gate-closed", "degraded", "stopped", "no-supervisor"
-]
 
 
 # ---------------------------------------------------------------------------

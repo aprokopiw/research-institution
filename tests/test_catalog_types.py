@@ -109,3 +109,78 @@ class ProgramTomlEntryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgramTomlEntrySchemaInvariantTests(unittest.TestCase):
+    """Pin the schema-invariant validators on :class:`ProgramTomlEntry`.
+
+    The Pydantic wire parse boundary owns the catalog schema invariants
+    (program-name regex, git-ref regex, https-only repository URL).
+    These tests pin the typed contract: a malformed value fails fast
+    at ``model_validate``, not deep in the ``Program`` dataclass's
+    ``__post_init__``.
+    """
+
+    def test_program_name_must_match_canonical_re(self) -> None:
+        """``name = \"Kaplansky\"`` (uppercase) fails the regex."""
+        entry = {
+            "name": "Kaplansky",  # wrong: must start with lowercase
+            "display_name": "x",
+            "repository": "https://x",
+            "entry_point": "x:r",
+            "local_path": "/x",
+            "mathlint_pin": "v1",
+            "live_credentials_required": False,
+            "live_credential_env_vars": [],
+            "check_program_script": "x.sh",
+        }
+        with self.assertRaises(ValidationError):
+            ProgramTomlEntry.model_validate(entry)
+
+    def test_mathlint_pin_must_match_git_ref_re(self) -> None:
+        """``mathlint_pin = \"v1; rm -rf /\"`` (whitespace) fails."""
+        entry = {
+            "name": "x",
+            "display_name": "x",
+            "repository": "https://x",
+            "entry_point": "x:r",
+            "local_path": "/x",
+            "mathlint_pin": "v1; rm -rf /",  # wrong: whitespace not allowed
+            "live_credentials_required": False,
+            "live_credential_env_vars": [],
+            "check_program_script": "x.sh",
+        }
+        with self.assertRaises(ValidationError):
+            ProgramTomlEntry.model_validate(entry)
+
+    def test_repository_must_be_https(self) -> None:
+        entry = {
+            "name": "x",
+            "display_name": "x",
+            "repository": "http://x",  # wrong: must be https
+            "entry_point": "x:r",
+            "local_path": "/x",
+            "mathlint_pin": "v1",
+            "live_credentials_required": False,
+            "live_credential_env_vars": [],
+            "check_program_script": "x.sh",
+        }
+        with self.assertRaises(ValidationError):
+            ProgramTomlEntry.model_validate(entry)
+
+    def test_valid_entry_with_invariants(self) -> None:
+        """A fully-valid entry passes the typed parse."""
+        entry = {
+            "name": "kaplansky",
+            "display_name": "Kaplansky",
+            "repository": "https://github.com/x/math-kaplansky",
+            "entry_point": "kaplansky.mathlint_plugin:register",
+            "local_path": "$HOME/src/math-kaplansky",
+            "mathlint_pin": "v1.0.0",
+            "live_credentials_required": False,
+            "live_credential_env_vars": [],
+            "check_program_script": "scripts/check.sh",
+        }
+        typed = ProgramTomlEntry.model_validate(entry)
+        self.assertEqual(typed.name, "kaplansky")
+        self.assertEqual(typed.mathlint_pin, "v1.0.0")
