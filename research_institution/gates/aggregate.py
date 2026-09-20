@@ -226,16 +226,31 @@ def _engine_check(*, mode: str) -> GateCheck:
     mode runs the operator's real config. The flag
     ``--skip-external`` mirrors the previous shell aggregator's
     default for hermetic.
+
+    The ``RESEARCH_INSTITUTION_ENGINE_SCRIPT`` env var overrides
+    the engine path so tests can stub mathlint with a fake
+    script. The escape hatch honors the convention established
+    by the previous shell aggregator's contract.
     """
-    engine_script = (
-        Path.home() / "Documents" / "andrei" / "math" / "scripts" / "check-local-system-readiness.sh"
-    )
-    if not engine_script.is_file():
-        return GateCheck(
-            name="engine",
-            status=GateStatus.SKIP,
-            detail="math-engine not at expected path; skipping",
+    override = os.environ.get("RESEARCH_INSTITUTION_ENGINE_SCRIPT")
+    if override:
+        engine_script = Path(override)
+        if not engine_script.is_file():
+            return GateCheck(
+                name="engine",
+                status=GateStatus.SKIP,
+                detail=f"RESEARCH_INSTITUTION_ENGINE_SCRIPT points at missing file: {engine_script}",
+            )
+    else:
+        engine_script = (
+            Path.home() / "Documents" / "andrei" / "math" / "scripts" / "check-local-system-readiness.sh"
         )
+        if not engine_script.is_file():
+            return GateCheck(
+                name="engine",
+                status=GateStatus.SKIP,
+                detail="math-engine not at expected path; skipping",
+            )
     argv: tuple[str, ...] = ("bash", str(engine_script))
     if mode == "hermetic":
         argv = (*argv, "--skip-external", "--use-program=self_test-sample")
