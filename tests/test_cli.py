@@ -968,6 +968,213 @@ def test_watch_argv_shape_to_pi_monitor(
     )
 
 
+def test_health_exits_zero_when_all_checks_pass(cli_runner, monkeypatch) -> None:
+    """`research health <prog>` exits 0 when every diagnostic passes.
+
+    Defect class: a regression that exits non-zero on a healthy
+    state would make operator automation (cron, scripts) reject
+    a working machine.
+    """
+    from research_institution.health import HealthReport, HealthCheck
+
+    monkeypatch.setattr(
+        "research_institution.cli.run_health",
+        lambda _program: HealthReport(
+            program="kaplansky",
+            checks=[
+                HealthCheck(name="green-gate-hermetic", ok=True, summary="ok"),
+                HealthCheck(name="live-preflight", ok=True, summary="ok"),
+                HealthCheck(name="architecture-review-gate", ok=True, summary="ok"),
+                HealthCheck(name="receipt-freshness", ok=True, summary="ok"),
+                HealthCheck(name="supervisor-alive", ok=True, summary="ok"),
+            ],
+        ),
+    )
+    result = cli_runner.invoke(args=["health", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0, f"healthy state exited {result.exit_code}"
+
+
+def test_health_exits_one_when_any_check_fails(cli_runner, monkeypatch) -> None:
+    """`research health <prog>` exits 1 when ANY diagnostic fails.
+
+    Defect class: a regression that exits 0 on partial failure
+    would silently let operators script around failing checks.
+    """
+    from research_institution.health import HealthReport, HealthCheck
+
+    monkeypatch.setattr(
+        "research_institution.cli.run_health",
+        lambda _program: HealthReport(
+            program="kaplansky",
+            checks=[
+                HealthCheck(name="green-gate-hermetic", ok=True, summary="ok"),
+                HealthCheck(
+                    name="live-preflight",
+                    ok=False,
+                    summary="missing credential",
+                    suggestion="set MATHLINT_MODEL_ROUTE",
+                ),
+            ],
+        ),
+    )
+    result = cli_runner.invoke(args=["health", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 1, f"unhealthy state exited {result.exit_code}"
+
+
+def test_health_verbose_invokes_green_gate(cli_runner, monkeypatch) -> None:
+    """`research health <prog> --verbose` MUST also invoke the green-gate
+    so the operator sees the full diagnostic transcript.
+
+    Defect class: a regression that drops the verbose gate run
+    leaves the operator with only the summary, no drill-down.
+    """
+    from research_institution.health import HealthReport, HealthCheck
+
+    monkeypatch.setattr(
+        "research_institution.cli.run_health",
+        lambda _program: HealthReport(
+            program="kaplansky",
+            checks=[
+                HealthCheck(name="green-gate-hermetic", ok=True, summary="ok"),
+            ],
+        ),
+    )
+    # Spy on subprocess.call to verify the green-gate is invoked.
+    captured: dict = {}
+    import subprocess as _sp
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured.setdefault("argv", list(argv))
+        return 0
+
+    monkeypatch.setattr(_sp, "call", fake_call)
+    # Resolve the gate path before the monkeypatch to ensure it's a real Path
+    from research_institution.paths import green_gate_path
+
+    gate = green_gate_path()
+    result = cli_runner.invoke(
+        args=["health", "kaplansky", "--verbose"], catch_exceptions=False
+    )
+    assert result.exit_code == 0
+    argv = captured.get("argv", [])
+    assert any("--hermetic" in str(a) for a in argv), (
+        f"health --verbose didn't invoke the green-gate with --hermetic; "
+        f"argv={argv!r}"
+    )
+    # The first arg is the bash interpreter; the gate path comes after.
+    assert str(gate) in " ".join(str(a) for a in argv), (
+        f"health --verbose didn't pass the gate path; argv={argv!r}, gate={gate}"
+    )
+
+
+def test_health_omits_verbose_gate_when_invoked_plain(cli_runner, monkeypatch) -> None:
+    """`research health <prog>` without --verbose MUST NOT invoke the green-gate
+    (only the summary is printed).
+
+    Defect class: a regression that always runs the gate (even
+    without --verbose) adds 2-10s to every health call.
+    """
+    from research_institution.health import HealthReport, HealthCheck
+
+    monkeypatch.setattr(
+        "research_institution.cli.run_health",
+        lambda _program: HealthReport(
+            program="kaplansky",
+            checks=[
+                HealthCheck(name="green-gate-hermetic", ok=True, summary="ok"),
+            ],
+        ),
+    )
+    import subprocess as _sp
+
+    captured: dict = {}
+
+    def fake_call(argv, *args, **kwargs):  # noqa: ARG001
+        captured.setdefault("argv", list(argv))
+        return 0
+
+    monkeypatch.setattr(_sp, "call", fake_call)
+    result = cli_runner.invoke(args=["health", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert captured == {}, (
+        f"health without --verbose still invoked subprocess.call; argv={captured!r}. "
+        f"This adds 2-10s to every operator health check."
+    )
+
+
+# ---------------------------------------------------------------------------
+# `status` command exit code contract.
+#
+# The dispatcher prints a status headline (no --verbose) regardless
+# of whether the supervisor is alive. The exit code must reflect
+# the supervisor state, NOT a generic zero, so operator scripts
+# can `if research status X; then ...` to branch on liveness.
+# ---------------------------------------------------------------------------
+
+
+def test_status_exits_zero_when_supervisor_running(cli_runner, monkeypatch) -> None:
+    """`research status <prog>` exits 0 when the supervisor is alive."""
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": True, "supervisor_pid": 43960, "worker_pid": 0},
+        )(),
+    )
+    # Also stub read_status_headline to avoid touching real state files.
+    from research_institution.status import StatusHeadline
+
+    monkeypatch.setattr(
+        "research_institution.cli.read_status_headline",
+        lambda prog, sd: StatusHeadline(
+            program=prog, state="running", uptime_seconds=120.0, last_action=""
+        ),
+    )
+    result = cli_runner.invoke(args=["status", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0, f"got {result.exit_code}"
+
+
+def test_status_exits_zero_when_no_supervisor(cli_runner, monkeypatch) -> None:
+    """`research status <prog>` exits 0 when no supervisor is running.
+
+    The headline reports `no-supervisor`; the operator reads the
+    output rather than the exit code. Exiting non-zero here would
+    make operator automation reject a fresh machine.
+    """
+    monkeypatch.setattr(
+        "research_institution.cli.probe_default_supervisor",
+        lambda: type(
+            "S",
+            (),
+            {"is_alive": False, "supervisor_pid": 0, "worker_pid": 0},
+        )(),
+    )
+    from research_institution.status import StatusHeadline
+
+    monkeypatch.setattr(
+        "research_institution.cli.read_status_headline",
+        lambda prog, sd: StatusHeadline(
+            program=prog, state="no-supervisor", uptime_seconds=0.0, last_action=""
+        ),
+    )
+    result = cli_runner.invoke(args=["status", "kaplansky"], catch_exceptions=False)
+    assert result.exit_code == 0, f"got {result.exit_code}"
+    assert "no-supervisor" in result.stdout
+
+
+def test_status_unknown_program_exits_nonzero(cli_runner) -> None:
+    """`research status <unknown>` exits nonzero.
+
+    Defect class: a regression that accepts unknown program names
+    silently would let typos in operator scripts pass through.
+    """
+    result = cli_runner.invoke(args=["status", "no-such-program"], catch_exceptions=False)
+    assert result.exit_code != 0, (
+        f"status <unknown> exited {result.exit_code}; should refuse."
+    )
+
+
 def test_watch_default_interval_is_2_seconds(cli_runner, tmp_path: Path, monkeypatch) -> None:
     """When --interval is omitted, watch MUST pass 2.0 to pi-monitor.
 
