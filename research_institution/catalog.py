@@ -16,6 +16,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 # Catalog schema invariants. Mirrored from catalog/schema.toml; tests
 # enforce both stay in sync via tests/test_catalog.py.
@@ -87,11 +88,13 @@ def load_catalog(path: Path) -> list[Program]:
     raw_entries = data.get("programs")
     if not isinstance(raw_entries, list) or not raw_entries:
         raise ValueError(f"catalog at {path} must contain a non-empty [[programs]] table")
+    # tomllib returns list[dict[str, Any]]; narrow to the type we expose.
+    typed_entries: list[dict[str, object]] = raw_entries  # type: ignore[assignment]
 
     programs: list[Program] = []
     seen_names: set[str] = set()
     seen_entry_segments: set[str] = set()
-    for idx, entry in enumerate(raw_entries):
+    for idx, entry in enumerate(typed_entries):
         try:
             prog = _parse_one(entry, idx)
         except ValueError as exc:
@@ -108,7 +111,7 @@ def load_catalog(path: Path) -> list[Program]:
     return programs
 
 
-def _parse_one(entry: dict, idx: int) -> Program:
+def _parse_one(entry: dict[str, object], idx: int) -> Program:
     """Parse one [[programs]] entry into a Program dataclass."""
     required = (
         "name",
@@ -126,24 +129,34 @@ def _parse_one(entry: dict, idx: int) -> Program:
         raise ValueError(f"missing keys: {missing}")
 
     creds_raw = entry["live_credential_env_vars"]
-    if not isinstance(creds_raw, list):
-        raise ValueError(f"live_credential_env_vars must be a list, got {type(creds_raw).__name__}")
+    creds_list: list[str] = []
+    if isinstance(creds_raw, list):
+        for v in cast("list[object]", creds_raw):
+            if isinstance(v, str):
+                creds_list.append(v)
+            else:
+                raise ValueError(
+                    "live_credential_env_vars entries must be strings"
+                )
+    else:
+        raise ValueError("live_credential_env_vars must be a list")
 
     # Validate entry_point shape at load time (per @ADR-0006 +
     # contracts/entry_point.py). Shape-only; import-time validation
     # is the green gate's job, not the catalog loader's.
     from research_institution.contracts.entry_point import parse_entry_point
 
-    parse_entry_point(entry["entry_point"])
+    entry_point = str(entry["entry_point"])
+    parse_entry_point(entry_point)
 
     return Program(
-        name=entry["name"],
-        display_name=entry["display_name"],
-        repository=entry["repository"],
-        entry_point=entry["entry_point"],
-        local_path=entry["local_path"],
-        mathlint_pin=entry["mathlint_pin"],
+        name=str(entry["name"]),
+        display_name=str(entry["display_name"]),
+        repository=str(entry["repository"]),
+        entry_point=entry_point,
+        local_path=str(entry["local_path"]),
+        mathlint_pin=str(entry["mathlint_pin"]),
         live_credentials_required=bool(entry["live_credentials_required"]),
-        live_credential_env_vars=tuple(creds_raw),
-        check_program_script=entry["check_program_script"],
+        live_credential_env_vars=tuple(creds_list),
+        check_program_script=str(entry["check_program_script"]),
     )

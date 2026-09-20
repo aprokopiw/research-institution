@@ -48,7 +48,7 @@ class SupervisorState:
     supervisor_pid: int
     worker_pid: int
     is_alive: bool
-    status_payload: dict | None = None
+    status_payload: dict[str, object] | None = None
 
 
 def _pid_alive(pid: int) -> bool:

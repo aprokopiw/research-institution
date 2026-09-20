@@ -10,18 +10,10 @@ state files (``health.json``, ``latest.json``) under
 
     <program>: <state> (<uptime>) \u2014 last: <action_summary>
 
-Where <state> is one of:
-
-    running          supervisor is alive and has fresh observations
-    circuit-open     trip_count > 0 or soft_until_unix > now
-    gate-closed      roadmap's TASK KIND is ARCHITECTURE_REVIEW_REQUIRED
-    degraded         degraded[] is non-empty
-    stopped          no fresh observation in 5+ minutes
-    no-supervisor    state dir absent or empty
-
-The parser is pure (no subprocess, no I/O beyond reading the
-state files). Tests use ``FakeEnvironment`` to inject a temp
-state dir.
+The six :data:`ProgramState` values are closed; see the enum for
+their meanings. The parser is pure (no subprocess, no I/O beyond
+reading the state files). Tests use ``FakeEnvironment`` to inject
+a temp state dir.
 """
 
 from __future__ import annotations
@@ -29,23 +21,51 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+
+class ProgramState(StrEnum):
+    """Closed vocabulary of supervisor program states.
+
+    Each member is a :class:`enum.StrEnum` so equality against
+    the wire string works without explicit ``.value`` access, and
+    pyright strict checks exhaustiveness across match statements.
+    The set is closed; a future contributor adding a new state
+    must add a member here AND surface it in
+    :func:`_classify`. Mirroring a string literal in tests is a
+    CI-detectable smell \u2014 the enum catches it at edit time.
+    """
+
+    RUNNING = "running"
+    CIRCUIT_OPEN = "circuit-open"
+    GATE_CLOSED = "gate-closed"
+    DEGRADED = "degraded"
+    STOPPED = "stopped"
+    NO_SUPERVISOR = "no-supervisor"
+
+
+#: Closed literal alias for tests + downstream code that wants
+#: to declare a state without importing the StrEnum.
+ProgramStateLiteral = Literal[
+    "running", "circuit-open", "gate-closed", "degraded", "stopped", "no-supervisor"
+]
 
 
 @dataclass(frozen=True, slots=True)
 class StatusHeadline:
     """One-line summary of a program's supervisor state.
 
-    `state` is one of the canonical states listed in the module
-    docstring. `uptime` is the elapsed seconds since the
-    supervisor's first observation (or 0 if unknown). `last` is
-    the last action summary string from the supervisor's
-    `execution` block; empty if no action has been taken.
+    `state` is one of the closed :class:`ProgramState` values.
+    `uptime` is the elapsed seconds since the supervisor's first
+    observation (or 0 if unknown). `last` is the last action
+    summary string from the supervisor's `execution` block;
+    empty if no action has been taken.
     """
 
     program: str
-    state: str
+    state: ProgramState
     uptime_seconds: float
     last_action: str
 
@@ -63,8 +83,8 @@ def _classify(
     latest: dict[str, Any] | None,
     *,
     now: float | None = None,
-) -> str:
-    """Map the supervisor's state JSON to a canonical state string.
+) -> ProgramState:
+    """Map the supervisor's state JSON to a canonical :class:`ProgramState`.
 
     `now` is the wall-clock anchor for the staleness check
     (`observed_unix + 300s`). Defaults to `time.time()`; tests
@@ -73,7 +93,7 @@ def _classify(
     import os as _os
 
     if health is None and latest is None:
-        return "no-supervisor"
+        return ProgramState.NO_SUPERVISOR
     health = health or {}
     latest = latest or {}
     # If the state files claim a supervisor_pid but it doesn't
@@ -85,23 +105,23 @@ def _classify(
         try:
             _os.kill(pid, 0)
         except (ProcessLookupError, PermissionError, OSError):
-            return "stopped"
+            return ProgramState.STOPPED
     circuit = health.get("circuit", {})
     if circuit.get("open") or (circuit.get("trip_count", 0) or 0) > 0:
-        return "circuit-open"
-    degraded = health.get("degraded") or []
+        return ProgramState.CIRCUIT_OPEN
+    degraded: list[object] = health.get("degraded") or []
     if degraded:
-        return "degraded"
+        return ProgramState.DEGRADED
     execution = health.get("execution", {})
     if execution.get("outcome") == "blocked":
-        return "gate-closed"
+        return ProgramState.GATE_CLOSED
     observed_unix = latest.get("observed_unix") or health.get("execution", {}).get("outcome_unix")
     if observed_unix is None:
-        return "no-supervisor"
+        return ProgramState.NO_SUPERVISOR
     age = (now if now is not None else time.time()) - float(observed_unix)
     if age > 300:  # 5 minutes
-        return "stopped"
-    return "running"
+        return ProgramState.STOPPED
+    return ProgramState.RUNNING
 
 
 def _uptime_seconds(latest: dict[str, Any] | None, *, now: float | None = None) -> float:

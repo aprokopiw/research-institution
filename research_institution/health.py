@@ -160,7 +160,7 @@ def _run_live_preflight() -> HealthCheck:
             summary="mathlint system-readiness produced no output",
             suggestion="check that math is installed and on PATH",
         )
-    checks = payload.get("checks") or []
+    checks: list[dict[str, object]] = payload.get("checks") or []
     failed = [c for c in checks if c.get("status") == "fail"]
     if not failed:
         return HealthCheck(
@@ -171,8 +171,8 @@ def _run_live_preflight() -> HealthCheck:
     # Render one suggestion per failure class.
     suggestion_lines: list[str] = []
     for c in failed[:8]:
-        cid = c.get("id", "?")
-        diag = c.get("diagnostic", "")
+        cid: str = str(c.get("id", "?"))
+        diag: str = str(c.get("diagnostic", ""))
         if cid == "MATH001" or cid == "MATH002":
             suggestion_lines.append(
                 f"{cid}: run `cd ~/Documents/andrei/math && make check` (or commit/stash the dirty changes)"
@@ -206,7 +206,7 @@ def _run_live_preflight() -> HealthCheck:
         ok=False,
         summary=f"{len(failed)}/{len(checks)} live checks failed",
         suggestion="\n".join(suggestion_lines),
-        evidence=", ".join(c.get("id", "?") for c in failed),
+        evidence=", ".join(str(c.get("id", "?")) for c in failed),
     )
 
 

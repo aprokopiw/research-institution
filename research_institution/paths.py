@@ -26,7 +26,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from research_institution.catalog import Program
 
 
 class Environment(Protocol):
@@ -236,7 +239,7 @@ def agent_skills_dir(env: Environment | None = None) -> Path:
     return Path.home() / ".pi" / "agent" / "skills"
 
 
-def missing_credentials(prog, env: Environment | None = None) -> list[str]:
+def missing_credentials(prog: Program, env: Environment | None = None) -> list[str]:
     """Return the list of credential env vars the program requires but
     the environment does not provide.
 

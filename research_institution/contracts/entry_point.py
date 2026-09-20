@@ -52,10 +52,18 @@ def parse_entry_point(entry_point: str) -> EntryPointSpec:
     """Parse a catalog `entry_point` string into its component parts.
 
     Raises `ValueError` on malformed input (no `:`, empty module,
-    empty callable).
+    empty callable, non-string).
+
+    The non-string guard is here for defensive runtime validation
+    even though the static type already declares ``str``: callers
+    that bridge untyped dynamic data (e.g. TOML ``dict[str, object]``
+    values from the catalog loader) may pass non-strings without a
+    pyright-visible type error. The guard rejects them loudly.
     """
-    if not isinstance(entry_point, str):
-        raise ValueError(f"entry_point must be a string; got {type(entry_point).__name__}")
+    if not isinstance(entry_point, str):  # type: ignore[reportUnnecessaryIsinstance]  # defensive runtime guard for untyped-dynamic callers (TOML dict[str, object]); static type already declares str
+        raise ValueError(
+            f"entry_point must be a string; got {type(entry_point).__name__}"
+        )
     if ":" not in entry_point:
         raise ValueError(
             f"entry_point {entry_point!r} must contain ':' separating module from callable"

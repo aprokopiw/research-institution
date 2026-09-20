@@ -50,12 +50,6 @@ one-pager.
 """
 
 
-def _verb_invocation_summary(verbs: tuple[DispatcherVerb, ...]) -> str:
-    """One-line description for the skill frontmatter `description:` field."""
-    verb_list = ", ".join(v.value for v in verbs)
-    return f"Start, stop, status, and watch the {{{{display_name}}}} program ({verb_list})."
-
-
 # Verbs surfaced in the skill template, in display order.
 SKILL_VERBS: tuple[DispatcherVerb, ...] = (
     DispatcherVerb.START,

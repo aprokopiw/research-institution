@@ -88,7 +88,7 @@ class GateReport:
         return tuple(c for c in self.checks if c.status is GateStatus.FAIL)
 
     def render(self) -> str:
-        lines = []
+        lines: list[str] = []
         for check in self.checks:
             prefix = f"[{check.name}]"
             if check.status is GateStatus.PASS:
