@@ -138,13 +138,6 @@ DecisionKindLiteral: TypeAlias = Literal["dispatch", "wait", "operator_required"
 # dataclasses. See module docstring for why we re-export rather
 # than mirror.
 # ---------------------------------------------------------------------------
-
-#: The tagged union of the four decision variants. A
-#: ``WorkSourceProvider.__call__`` always returns one of these.
-SourceDecision: TypeAlias = Dispatch | Wait | OperatorRequired | Stop
-
-
-# ---------------------------------------------------------------------------
 # Wire shape — Pydantic models so ``source_decision_to_wire`` returns a
 # concrete type instead of ``dict[str, Any]``. ``extra="allow"`` keeps
 # forward-compat (a future source may add a new field). The five
