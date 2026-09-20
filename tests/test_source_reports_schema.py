@@ -6,7 +6,7 @@ pi_monitor's emitter changes a field name or adds a required field,
 these tests catch it before any future observability surface breaks.
 
 The fixture is a REAL line from the operator's local source-reports
-(snapshot at HARDENING-CHECKLIST §E time). The test asserts that:
+(snapshot archived in plan-011 closure audit; durable anchor `@INV-0093`). The test asserts that:
 
   - The fixture parses without error.
   - Every documented field is present and typed.

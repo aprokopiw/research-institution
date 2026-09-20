@@ -9,8 +9,8 @@ date: 2026-09-19
 related:
   - AGENTS.md
   - ADR-0006
-  - HARDENING-CHECKLIST.md §C.1
-origin-postmortem: research-institution/HARDENING-CHECKLIST.md §A
+  - @INV-0093
+origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 ---
 
 # ADR-0007: mathlint `architect-review --program <name>` + programmatic gate verdict
@@ -96,4 +96,4 @@ work source). The clean fix is a first-class programmatic verdict.
 - `@ADR-0006` — research-institution owns only catalog + bootstrap + green gate + dispatcher.
 - `@INV-0091` — mathlint does not ship program launchers.
 - `@INV-0093` — institution green gate is the canonical wiring evidence.
-- `research-institution/HARDENING-CHECKLIST.md §C.1` — original ask.
+- `research-institution/HARDENING-CHECKLIST.md §C.1` — original ask (deleted; archived in plan-011 closure audit, durable anchor `@INV-0093`).

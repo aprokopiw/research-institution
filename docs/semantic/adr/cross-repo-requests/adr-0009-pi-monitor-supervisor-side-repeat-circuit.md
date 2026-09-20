@@ -9,8 +9,8 @@ date: 2026-09-19
 related:
   - AGENTS.md
   - ADR-0006
-  - HARDENING-CHECKLIST.md §C.3
-origin-postmortem: research-institution/HARDENING-CHECKLIST.md §A
+  - @INV-0093
+origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 ---
 
 # ADR-0009: pi_monitor supervisor-side repeat circuit
@@ -95,4 +95,4 @@ supervisor-side circuit is defense-in-depth that catches:
 - `@ADR-0014` — pi_monitor invariant: re-dispatch of the same key is
   `reactivate` (the design choice this circuit augments, not replaces).
 - `pi_monitor/supervisor.py:1394` — the dispatch path this ADR targets.
-- `research-institution/HARDENING-CHECKLIST.md §C.3` — original ask.
+- `research-institution/HARDENING-CHECKLIST.md §C.3` — original ask (deleted; archived in plan-011 closure audit, durable anchor `@INV-0093`).

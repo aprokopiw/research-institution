@@ -128,7 +128,7 @@ Two ADRs superseded:
 - **Move the scripts to pi_monitor as new TUI panels.** Plausible for
   the reasoning tail (TUI activity feed extension) and the gate check
   (audit-events panel). Out of scope for this ADR; tracked as cross-repo
-  work in `HARDENING-CHECKLIST.md`.
+  work in `docs/semantic/adr/cross-repo-requests/`.
 
 ## Consequences
 
@@ -138,11 +138,12 @@ Two ADRs superseded:
 - Each catalog program gets one `research <verb> <program>` invocation,
   resolved from the catalog. Adding a 100th program is a one-line
   catalog edit + zero Python changes.
-- Cross-repo ADR backlog (the legitimate `HARDENING-CHECKLIST.md`
-  items) is the only remaining work this repo owes.
+- Cross-repo ADR backlog (`docs/semantic/adr/cross-repo-requests/`)
+  is the only remaining work this repo owes.
 - The skill installer script (`scripts/install-kaplansky-skills.sh`)
   becomes obsolete once the dispatcher CLI exposes
-  `research install-skills`. Tracked in checklist.
+  `research install-skills`. Shipped in B.1.5; tracked here for
+  historical reference.
 
 ## Change triggers
 

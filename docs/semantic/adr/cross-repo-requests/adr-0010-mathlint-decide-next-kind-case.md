@@ -9,7 +9,7 @@ date: 2026-09-19
 related:
   - AGENTS.md
   - ADR-0006
-  - HARDENING-CHECKLIST.md §A
+  - @INV-0093
   - ADR-0008 (sibling — decide_next repeat limit)
   - ADR-0009 (sibling — supervisor-side repeat circuit)
 origin-test: research-institution/tests/test_source_decision_contract.py::test_mathlint_decide_next_envelope_parses
