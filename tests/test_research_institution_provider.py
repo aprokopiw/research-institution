@@ -158,16 +158,29 @@ def test_select_next_work_does_not_import_kaplansky_directly() -> None:
     the OS layer must stay program-agnostic. A regression that
     imports ``kaplansky.*`` here would couple the OS to one
     program.
+
+    We check ``ast`` imports rather than a substring search because
+    the OS legitimately references the program's TOML filename
+    (``kaplansky-roadmap.toml``) and can mention program names in
+    docstrings when explaining what the OS reads.
     """
+    import ast
     import inspect
 
     source = inspect.getsource(select_next_work_for_supervisor)
-    # No direct imports of program packages in the function body.
-    for module in ("kaplansky", "math-kaplansky"):
-        assert module not in source, (
-            f"select_next_work_for_supervisor references {module!r}; "
-            f"OS-level provider must stay program-agnostic per @ADR-0014"
-        )
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert not alias.name.startswith("kaplansky"), (
+                    f"select_next_work_for_supervisor imports {alias.name!r}; "
+                    f"OS-level provider must stay program-agnostic per @ADR-0014"
+                )
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            assert not node.module.startswith("kaplansky"), (
+                f"select_next_work_for_supervisor imports from {node.module!r}; "
+                f"OS-level provider must stay program-agnostic per @ADR-0014"
+            )
 
 
 def test_select_next_work_label_is_unique_per_invocation(tmp_path: Path) -> None:
@@ -189,3 +202,136 @@ def test_select_next_work_label_is_unique_per_invocation(tmp_path: Path) -> None
         f"label2={envelope2.source_revision.label!r}. The "
         f"label includes a tick counter that must advance."
     )
+
+
+# ---------------------------------------------------------------------------
+# Dispatch-path tests (require a roadmap with active items).
+#
+# These tests build a real kaplansky-style roadmap in tmp_path and
+# verify that ``select_next_work_for_supervisor`` delegates to
+# ``kaplansky.work_selection.next_active_work`` correctly:
+#
+#   - missing roadmap → ``Wait`` with ``reason_code=wait_requested``
+#   - roadmap with zero active items → ``Wait`` with
+#     ``reason_code=no_eligible_work`` and ``wake_on_source_change``
+#   - roadmap with one active item → ``Dispatch`` carrying one
+#     ``WorkRequest`` whose ``operation_id`` is the item id
+# ---------------------------------------------------------------------------
+
+
+_ACTIVE_ITEM_ROADMAP = """
+schema = 1
+id = "kaplansky"
+title = "Kaplansky"
+north_star = "n/a"
+roadmap_version = 1
+current_phase = "p9"
+
+[[items]]
+id = "P9.1"
+title = "Extract the alternating square"
+phase = "p9"
+type = "structural-interface-test"
+priority = "critical"
+status = "active"
+role = "mathematical-research"
+rationale = "minimal witness must be balance-closed"
+exact_target = "kaplansky.minimal-rigidity-overlap-alternating-square"
+next_action = "Extract the alternating square from a minimal rigidity overlap."
+done_when = ["overlap-witness is balance-closed"]
+do_not_conclude = ["no positive assertion without a witness"]
+allowed_files = ["src/kaplansky/collision.py"]
+success_criteria = ["rank-additive extraction passes falsification"]
+verification_requirements = ["model-audited"]
+"""
+
+
+def _write_roadmap(repo: Path, body: str) -> Path:
+    programs_dir = repo / "programs"
+    programs_dir.mkdir(parents=True, exist_ok=True)
+    path = programs_dir / "kaplansky-roadmap.toml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_dispatch_when_roadmap_has_active_item(tmp_path: Path) -> None:
+    """Happy path: the proof program has an active item → Dispatch envelope."""
+    pytest.importorskip("kaplansky")  # Skip if kaplansky is not installed
+    _write_roadmap(tmp_path, _ACTIVE_ITEM_ROADMAP)
+
+    envelope = select_next_work_for_supervisor(tmp_path)
+
+    assert isinstance(envelope, Dispatch), (
+        f"expected Dispatch, got {type(envelope).__name__}: {envelope!r}"
+    )
+    assert envelope.reason_code == "work_available"
+    assert len(envelope.work) == 1
+    req = envelope.work[0]
+    assert req.operation_id == "P9.1"
+    assert req.source_identity == "kaplansky-research-program"
+    assert req.operation_kind == "mathlint-research"
+    assert req.payload["next_action"].startswith("Extract the alternating square")
+    assert req.payload["rationale"] == "minimal witness must be balance-closed"
+
+
+def test_wait_when_roadmap_has_no_active_item(tmp_path: Path) -> None:
+    """No active items → Wait with ``reason_code=no_eligible_work``."""
+    pytest.importorskip("kaplansky")
+    _write_roadmap(
+        tmp_path,
+        """
+        schema = 1
+        id = "kaplansky"
+        title = "Kaplansky"
+        north_star = "n/a"
+        roadmap_version = 1
+        current_phase = "p9"
+
+        [[items]]
+        id = "P0.1"
+        title = "done"
+        phase = "p0"
+        type = "infrastructure"
+        priority = "critical"
+        status = "promoted"
+        role = "completed"
+        rationale = "already done"
+        exact_target = "x"
+        """,
+    )
+
+    envelope = select_next_work_for_supervisor(tmp_path)
+
+    assert isinstance(envelope, Wait)
+    assert envelope.reason_code == "no_eligible_work"
+    assert envelope.wake_on_source_change is True
+    assert envelope.retry_after_seconds == 60.0
+
+
+def test_wait_when_roadmap_missing(tmp_path: Path) -> None:
+    """No roadmap.toml → Wait with ``reason_code=wait_requested``."""
+    pytest.importorskip("kaplansky")
+
+    envelope = select_next_work_for_supervisor(tmp_path)
+
+    assert isinstance(envelope, Wait)
+    assert envelope.reason_code == "wait_requested"
+    assert envelope.wake_on_source_change is True
+
+
+def test_dispatch_idempotency_key_is_stable(tmp_path: Path) -> None:
+    """Two consecutive calls with the same active item MUST produce
+    the same idempotency key so the supervisor can dedupe retries.
+    """
+    pytest.importorskip("kaplansky")
+    _write_roadmap(tmp_path, _ACTIVE_ITEM_ROADMAP)
+
+    envelope1 = select_next_work_for_supervisor(tmp_path)
+    envelope2 = select_next_work_for_supervisor(tmp_path)
+
+    assert isinstance(envelope1, Dispatch)
+    assert isinstance(envelope2, Dispatch)
+    # Fingerprint can differ if a git HEAD advances between calls
+    # (it doesn't in tmp_path); the operation_id is the stable part.
+    assert envelope1.work[0].operation_id == envelope2.work[0].operation_id
+    assert envelope1.work[0].idempotency_key[2] == envelope2.work[0].idempotency_key[2]

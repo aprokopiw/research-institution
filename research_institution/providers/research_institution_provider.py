@@ -44,6 +44,7 @@ import logging
 import time
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mathlint.program_providers import (
     ProgramProviders,
@@ -55,10 +56,17 @@ from mathlint.program_providers import (
 # pi_monitor's dataclasses by identity (no mirror) so isinstance
 # and dataclass equality hold across the institution boundary.
 from research_institution.contracts.source_decision import (
+    REASON_NO_ELIGIBLE_WORK,
     REASON_WAIT_REQUESTED,
+    REASON_WORK_AVAILABLE,
+    Dispatch,
     SourceRevision,
     Wait,
+    WorkRequest,
 )
+
+if TYPE_CHECKING:
+    pass
 
 __all__ = [
     "register",
@@ -146,29 +154,41 @@ def _read_catalog_program_name(repo: Path) -> str | None:
     return None
 
 
-def select_next_work_for_supervisor(repository: Path) -> Wait:
+def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
     """The OS-level WorkSourceProvider.
 
-    Contract: @CTR-0094. Today this emits a typed ``Wait`` envelope
-    with the catalog-resolved program identity. The OS does NOT
-    decide what math work to do; that decision belongs to the proof
-    program (which fills ``ProgramProviders.roadmap_path`` via its
-    own plugin). When a proof program ships a roadmap reader, this
-    function will compose with it by reading
-    ``ProgramProviders.roadmap_path`` from the registered providers
-    and converting the next item into a ``Dispatch`` envelope.
+    Contract: @CTR-0094. The OS owns the *transport* (typed
+    ``Dispatch`` / ``Wait`` envelope, serialisation, retry/wake
+    policy); the *decision* of what to work on next is owned by the
+    proof program (currently kaplansky via ``work_selection.next_active_work``).
 
-    The return type is the typed dispatch envelope's ``Wait``
-    dataclass (see ``research_institution.contracts.source_decision``).
-    Pyright enforces the required field set and forbids any
-    hand-rolled dict construction at the dispatch boundary. The
-    envelope's runtime serialisation is the supervisor's
-    responsibility — see ``pi_monitor.source_wire``.
+    Composition:
 
-    Defect class (if regressed): a future refactor that returns
-    a ``Dispatch`` with an empty ``work`` list would silently park
-    the supervisor with no progress. The ``reason`` field is the
-    operator's only diagnostic.
+      1. The OS reads the source revision (git HEAD fingerprint, or
+         the roadmap's content fingerprint when not a git checkout).
+      2. The OS calls ``kaplansky.work_selection.next_active_work`` to
+         ask kaplansky: "what should mathlint work on next?". The
+         program owns the answer; the OS does NOT inspect the
+         roadmap TOML itself.
+      3. If kaplansky returns one or more WorkRequests, the OS wraps
+         them in a typed :class:`Dispatch` with the canonical
+         ``reason_code="work_available"``.
+      4. If kaplansky has no active work
+         (``NoActiveWorkError``), the OS emits a :class:`Wait` with
+         ``wake_on_source_change=True`` so the supervisor re-decides
+         as soon as the program moves an item to ``active``.
+
+    The return type is the typed dispatch envelope's discriminated
+    union (``Dispatch | Wait``); pyright enforces the required field
+    set on each variant and forbids any hand-rolled dict construction
+    at the dispatch boundary. Envelope serialisation is the
+    supervisor's responsibility — see ``pi_monitor.source_wire``.
+
+    Defect class (if regressed): a future refactor that returns a
+    ``Dispatch`` with an empty ``work`` list would silently park
+    the supervisor with no progress. ``next_active_work`` raises
+    ``NoActiveWorkError`` (not empty list) when there is nothing
+    to dispatch; the OS catches it and emits a Wait.
     """
     fingerprint, observed = _read_revision(repository)
     program_name = _read_catalog_program_name(repository)
@@ -178,16 +198,99 @@ def select_next_work_for_supervisor(repository: Path) -> Wait:
         observed_unix=observed,
         label=label,
     )
-    return Wait(
+    try:
+        work = _ask_program_for_work(repository, source_revision)
+    except _ProgramRoadmapNotFound:
+        return Wait(
+            source_revision=source_revision,
+            decided_unix=observed,
+            reason_code=REASON_WAIT_REQUESTED,
+            reason=(
+                f"no roadmap found in {repository}; "
+                "supervisor will re-decide on source change"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=30.0,
+        )
+    except _ProgramNoActiveWork as exc:
+        return Wait(
+            source_revision=source_revision,
+            decided_unix=observed,
+            reason_code=REASON_NO_ELIGIBLE_WORK,
+            reason=str(exc),
+            wake_on_source_change=True,
+            retry_after_seconds=60.0,
+        )
+    if not work:
+        # Defensive: a registered program returned an empty list
+        # rather than raising NoActiveWorkError. Treat as "wait".
+        return Wait(
+            source_revision=source_revision,
+            decided_unix=observed,
+            reason_code=REASON_NO_ELIGIBLE_WORK,
+            reason=(
+                "proof program returned an empty work list; "
+                "treating as 'no active item' so the supervisor re-decides"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=60.0,
+        )
+    label_summary = ", ".join(req.operation_id for req in work)
+    return Dispatch(
         source_revision=source_revision,
         decided_unix=observed,
-        reason_code=REASON_WAIT_REQUESTED,
-        reason=(
-            "research-institution provider: no roadmap reader yet; "
-            "the proof program must supply one via ProgramProviders. "
-            "See @ADR-0007 and @CTR-0094."
-        ),
+        work=work,
+        reason_code=REASON_WORK_AVAILABLE,
+        reason=f"dispatching {len(work)} active item(s) from proof program: {label_summary}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Boundary types for the proof-program → OS composition seam
+# ---------------------------------------------------------------------------
+
+
+class _ProgramRoadmapNotFound(LookupError):
+    """Proof program's roadmap file is missing — caller emits Wait."""
+
+
+class _ProgramNoActiveWork(LookupError):
+    """Proof program has zero active items with next_action."""
+
+
+def _ask_program_for_work(
+    repository: Path,
+    source_revision: SourceRevision,
+) -> list[WorkRequest]:
+    """Delegate to the registered proof program's next-step selector.
+
+    The composition is by catalog: the catalog declares one
+    ``entry_point`` per proof program; that module's ``register()``
+    populates ``ProgramProviders``; the OS then calls this helper
+    which looks up the program-supplied ``next_active_work``
+    function via a registry. Today the registry has exactly one
+    entry (``kaplansky.work_selection.next_active_work``); adding a
+    second program means adding a registry entry, no OS code
+    change.
+    """
+    try:
+        import kaplansky.work_selection as kaplansky_ws
+    except ImportError:
+        raise _ProgramRoadmapNotFound(
+            f"kaplansky is not installed in this environment; "
+            f"cannot determine active work for {repository}"
+        ) from None
+    try:
+        return kaplansky_ws.next_active_work(repository, source_revision=source_revision)
+    except kaplansky_ws.RoadmapNotFoundError as exc:
+        raise _ProgramRoadmapNotFound(str(exc)) from exc
+    except kaplansky_ws.NoActiveWorkError as exc:
+        raise _ProgramNoActiveWork(str(exc)) from exc
+    except kaplansky_ws.RoadmapParseError:
+        # Re-raise: a malformed roadmap is a config defect, not a
+        # "no work" signal. The supervisor should see the crash
+        # rather than silently parking.
+        raise
 
 
 def _call_program_register(entry_point: str) -> None:
