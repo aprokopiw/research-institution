@@ -82,3 +82,29 @@ ignore = ["E501", "S101", "S104", "S603", "S607"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
+
+[tool.pyright]
+include = ["research_institution", "tests"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+# Constitution Principle V (research-institution/.specify/memory/constitution.md)
+# tightens the strict-mode flags. The institution's OS provider emits
+# typed dispatch envelopes, so untyped data on that surface is a
+# compile-time error.
+#
+# ``reportAny`` is unavailable in pyright 1.1.414; it will land in a
+# future release. Until then, ``typeCheckingMode = "strict"`` plus the
+# ``Unknown``-family flags below catch the same class of bug.
+reportUnknownArgumentType = "error"
+reportUnknownLambdaType = "error"
+reportUnknownVariableType = "error"
+reportUnknownMemberType = "error"
+reportUnknownParameterType = "error"
+reportMissingTypeArgument = "error"
+reportMissingTypeStubs = "none"  # pure-Python; no stub packages expected
+reportImplicitOverride = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUninitializedInstanceVariable = "error"
+reportPrivateUsage = "error"

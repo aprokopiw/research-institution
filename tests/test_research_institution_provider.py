@@ -12,6 +12,13 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from pi_monitor.work_source import (
+    Dispatch,
+    OperatorRequired,
+    SourceRevision,
+    Stop,
+    Wait,
+)
 
 from research_institution.providers.research_institution_provider import (
     register,
@@ -22,9 +29,6 @@ from research_institution.providers.research_institution_provider import (
 # the consumer (mathlint's real_source.configured_provider); we pin
 # it here so a regression that widens the vocabulary surfaces loudly.
 _DISPATCH_KINDS = frozenset({"Dispatch", "Wait", "OperatorRequired", "Stop"})
-
-_REQUIRED_ENVELOPE_KEYS = frozenset({"kind", "reason", "source_revision", "work"})
-_REQUIRED_REVISION_KEYS = frozenset({"fingerprint", "observed_unix", "label"})
 
 
 def test_register_populates_work_source_provider_slot() -> None:
@@ -59,44 +63,22 @@ def test_register_is_idempotent() -> None:
 
 def test_select_next_work_returns_dispatch_envelope(tmp_path: Path) -> None:
     """``select_next_work_for_supervisor(repository)`` MUST return a
-    dict that satisfies @CTR-0094's envelope contract: the four
-    required keys with the correct shapes.
+    typed envelope that satisfies @CTR-0094's contract: one of the
+    four dispatch kinds, with a typed ``source_revision`` carrying
+    a fingerprint, observed_unix, and label.
     """
     envelope = select_next_work_for_supervisor(tmp_path)
-    assert isinstance(envelope, dict), (
-        f"envelope is {type(envelope).__name__}; expected dict per @CTR-0094"
-    )
-    missing = _REQUIRED_ENVELOPE_KEYS - set(envelope.keys())
-    assert not missing, (
-        f"envelope missing required keys per @CTR-0094: {sorted(missing)}"
-    )
-    assert envelope["kind"] in _DISPATCH_KINDS, (
-        f"envelope['kind'] = {envelope['kind']!r}; must be one of "
-        f"{sorted(_DISPATCH_KINDS)} per @CTR-0094"
-    )
-    assert isinstance(envelope["reason"], str) and envelope["reason"], (
-        f"envelope['reason'] must be a non-empty string; got {envelope['reason']!r}"
-    )
-    assert isinstance(envelope["work"], list), (
-        f"envelope['work'] must be a list per @CTR-0094; got {type(envelope['work']).__name__}"
-    )
-
-    # source_revision shape per @CTR-0094.
-    revision = envelope["source_revision"]
-    assert isinstance(revision, dict), (
-        f"source_revision is {type(revision).__name__}; expected dict"
-    )
-    rev_missing = _REQUIRED_REVISION_KEYS - set(revision.keys())
-    assert not rev_missing, (
-        f"source_revision missing required keys: {sorted(rev_missing)}"
-    )
-    assert isinstance(revision["fingerprint"], str)
-    assert len(revision["fingerprint"]) == 40, (
+    assert isinstance(
+        envelope, (Dispatch, Wait, OperatorRequired, Stop)
+    ), f"envelope is {type(envelope).__name__}; expected a typed dispatch envelope"
+    assert isinstance(envelope.source_revision, SourceRevision)
+    assert isinstance(envelope.source_revision.fingerprint, str)
+    assert len(envelope.source_revision.fingerprint) == 40, (
         f"source_revision.fingerprint must be a 40-char git SHA; got "
-        f"len={len(revision['fingerprint'])}"
+        f"len={len(envelope.source_revision.fingerprint)}"
     )
-    assert isinstance(revision["observed_unix"], (int, float))
-    assert isinstance(revision["label"], str)
+    assert isinstance(envelope.source_revision.observed_unix, (int, float))
+    assert isinstance(envelope.source_revision.label, str)
 
 
 def test_select_next_work_handles_non_git_repository(tmp_path: Path) -> None:
@@ -110,9 +92,9 @@ def test_select_next_work_handles_non_git_repository(tmp_path: Path) -> None:
     """
     # tmp_path is not a git repo; select_next_work should still succeed.
     envelope = select_next_work_for_supervisor(tmp_path)
-    assert envelope["kind"] in _DISPATCH_KINDS
+    assert isinstance(envelope, (Dispatch, Wait, OperatorRequired, Stop))
     # The fingerprint is either zeros (fallback) or a real git SHA.
-    assert envelope["source_revision"]["fingerprint"] is not None
+    assert envelope.source_revision.fingerprint is not None
 
 
 def test_select_next_work_returns_wait_when_no_roadmap_reader() -> None:
@@ -126,14 +108,12 @@ def test_select_next_work_returns_wait_when_no_roadmap_reader() -> None:
     the OS plugin or the program content.
     """
     envelope = select_next_work_for_supervisor(Path("/tmp"))  # noqa: S108
-    assert envelope["kind"] == "Wait", (
-        f"expected kind='Wait' until a roadmap reader ships; got {envelope['kind']!r}. "
-        f"A regression here either: (a) returns Dispatch with no work, which "
-        f"silently parks the supervisor, or (b) returns Dispatch with empty "
-        f"work, which produces false progress signals."
-    )
-    assert envelope["work"] == [], (
-        f"Wait envelopes MUST have empty work; got {envelope['work']!r}"
+    assert isinstance(envelope, Wait), (
+        f"expected a Wait envelope until a roadmap reader ships; got "
+        f"{type(envelope).__name__}. A regression here either: (a) returns "
+        f"Dispatch with no work, which silently parks the supervisor, or "
+        f"(b) returns Dispatch with empty work, which produces false "
+        f"progress signals."
     )
 
 
@@ -163,7 +143,7 @@ def test_select_next_work_resolves_catalog_program_name(tmp_path: Path) -> None:
         pytest.skip(f"catalog local_path {repo} not on this machine")
 
     envelope = select_next_work_for_supervisor(repo)
-    label = envelope["source_revision"]["label"]
+    label = envelope.source_revision.label
     expected_program_name = programs[0]["name"]
     assert expected_program_name in label, (
         f"label {label!r} should mention the catalog program name "
@@ -201,11 +181,11 @@ def test_select_next_work_label_is_unique_per_invocation(tmp_path: Path) -> None
     _time.sleep(1.0)
     envelope2 = select_next_work_for_supervisor(tmp_path)
     assert (
-        envelope1["source_revision"]["label"]
-        != envelope2["source_revision"]["label"]
+        envelope1.source_revision.label
+        != envelope2.source_revision.label
     ), (
         f"Two consecutive envelopes produced the same label; "
-        f"label1={envelope1['source_revision']['label']!r}, "
-        f"label2={envelope2['source_revision']['label']!r}. The "
+        f"label1={envelope1.source_revision.label!r}, "
+        f"label2={envelope2.source_revision.label!r}. The "
         f"label includes a tick counter that must advance."
     )

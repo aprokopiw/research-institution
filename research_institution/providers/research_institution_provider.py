@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-import importlib.metadata
 import logging
 import time
 from collections.abc import Iterable
@@ -51,6 +50,7 @@ from mathlint.program_providers import (
     WorkSourceProvider,
     register_program_providers,
 )
+from pi_monitor.work_source import SourceRevision, Wait
 
 __all__ = [
     "register",
@@ -137,40 +137,48 @@ def _read_catalog_program_name(repo: Path) -> str | None:
     return None
 
 
-def select_next_work_for_supervisor(repository: Path) -> dict[str, object]:
+def select_next_work_for_supervisor(repository: Path) -> Wait:
     """The OS-level WorkSourceProvider.
 
-    Contract: @CTR-0094. Today this emits a structured ``Wait``
-    envelope with the catalog-resolved program identity. The OS
-    does NOT decide what math work to do; that decision belongs to
-    the proof program (which fills ``ProgramProviders.roadmap_path``
-    via its own plugin). When a proof program ships a roadmap
-    reader, this function will compose with it by reading
+    Contract: @CTR-0094. Today this emits a typed ``Wait`` envelope
+    with the catalog-resolved program identity. The OS does NOT
+    decide what math work to do; that decision belongs to the proof
+    program (which fills ``ProgramProviders.roadmap_path`` via its
+    own plugin). When a proof program ships a roadmap reader, this
+    function will compose with it by reading
     ``ProgramProviders.roadmap_path`` from the registered providers
     and converting the next item into a ``Dispatch`` envelope.
 
+    The return type is the typed dispatch envelope's ``Wait``
+    dataclass (see ``research_institution.dispatch_protocol``).
+    Pyright enforces the required field set and forbids any
+    hand-rolled dict construction at the dispatch boundary. The
+    envelope's runtime serialisation is the supervisor's
+    responsibility — see ``pi_monitor.source_wire``.
+
     Defect class (if regressed): a future refactor that returns
-    ``kind="Dispatch"`` with an empty ``work`` list would silently
-    park the supervisor with no progress. The ``reason`` field is
-    the operator's only diagnostic.
+    a ``Dispatch`` with an empty ``work`` list would silently park
+    the supervisor with no progress. The ``reason`` field is the
+    operator's only diagnostic.
     """
     fingerprint, observed = _read_revision(repository)
     program_name = _read_catalog_program_name(repository)
     label = f"{program_name or 'unknown-program'}-tick-{int(observed)}"
-    return {
-        "kind": "Wait",
-        "reason": (
+    source_revision = SourceRevision(
+        fingerprint=fingerprint,
+        observed_unix=observed,
+        label=label,
+    )
+    return Wait(
+        source_revision=source_revision,
+        decided_unix=observed,
+        reason_code="wait_requested",
+        reason=(
             "research-institution provider: no roadmap reader yet; "
             "the proof program must supply one via ProgramProviders. "
             "See @ADR-0007 and @CTR-0094."
         ),
-        "source_revision": {
-            "fingerprint": fingerprint,
-            "observed_unix": observed,
-            "label": label,
-        },
-        "work": [],
-    }
+    )
 
 
 def _call_program_register(entry_point: str) -> None:

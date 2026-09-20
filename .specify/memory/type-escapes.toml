@@ -1,0 +1,39 @@
+# type-escapes.toml
+#
+# Central ledger of every approved escape from the strict-type policy
+# declared in .specify/memory/constitution.md. Per Constitution
+# Principle VI, escapes are approved only after the three-strikes
+# protocol (TypeAlias / NewType / Protocol / Generic all attempted).
+#
+# Per Constitution Principle VIII, every entry below carries an inline
+# reason: why the escape exists, what it leaves untyped, and whether
+# the upstream type can ever be tightened.
+#
+# Format: each table entry is a TOML array of tables; CI tooling
+# (research_institution/gates/type_escape_audit.py) reads this file
+# and greps the source tree for `# type: ignore` / `cast(` /
+# `Any` markers not declared here.
+#
+# A non-empty file means the codebase has untyped escapes. The
+# policy target is zero.
+
+[[escape]]
+path = "research_institution/dispatch_protocol/envelope.py"
+line = 0
+kind = "module_docstring_warning"
+reason = "This module is a typed-only re-export hub. Imports under TYPE_CHECKING are intentional and erased at compile time; the runtime fallback object() values below TYPE_CHECKING are sentinel stubs documented in the module docstring. No runtime code path reads them — pyright sees the real types, the runtime never executes the type-evaluation."
+scope = "dispatch_protocol runtime stub fallback"
+
+[[escape]]
+path = "research_institution/providers/research_institution_provider.py"
+line = 0
+kind = "runtime_typed_import"
+reason = "The OS provider instantiates a typed Wait envelope at runtime. This requires a runtime import of pi_monitor.work_source. The import is a sibling-runtime import (research-institution owns the OS, pi-monitor owns the supervisor); both are installed at operator runtime per the dev dependency pin."
+scope = "OS provider dispatch envelope construction"
+
+[[escape]]
+path = "research_institution/gates/type_escape_audit.py"
+line = 0
+kind = "audit_tool_itself"
+reason = "The audit tool scans the source tree for type:ignore and cast( markers. Its own internals use re.MULTILINE regex on raw bytes; the untyped Any leak in its matches is intentional and audited by itself."
+scope = "audit tool, line-numbered grep results"

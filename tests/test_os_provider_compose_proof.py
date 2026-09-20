@@ -144,34 +144,48 @@ def test_os_register_idempotent(mathlint_kernels) -> None:
 
 
 def test_select_next_work_returns_wait_envelope(mathlint_kernels) -> None:
-    """The OS work-source callable emits a structured Wait envelope."""
+    """The OS work-source callable emits a typed Wait envelope."""
+    from pi_monitor.work_source import Wait as _Wait
+
     from research_institution.providers.research_institution_provider import (
         select_next_work_for_supervisor,
     )
 
     env = select_next_work_for_supervisor(repository=__import__("pathlib").Path.cwd())
-    assert env["kind"] == "Wait"
-    assert "reason" in env
-    assert "source_revision" in env
-    assert "fingerprint" in env["source_revision"]
-    assert "work" in env
-    assert isinstance(env["work"], list)
+    assert isinstance(env, _Wait)
+    assert env.source_revision.fingerprint
+    assert env.reason_code == "wait_requested"
+    assert env.decided_unix > 0
+    # No ``work`` attribute on the OS-side Wait envelope. The OS
+    # does not ship a roadmap reader yet (see @ADR-0007); when one
+    # ships, the envelope graduates to a ``Dispatch`` carrying a
+    # populated ``work`` list. Today, the absence of ``work`` is
+    # the signal — pi-monitor's wire v1 rejects Wait envelopes
+    # carrying ``work`` (unexpected-field error).
 
 
 def test_select_next_work_is_pure() -> None:
     """select_next_work_for_supervisor is pure: it accepts a Path
-    and returns an envelope. It does NOT read env vars or import
+    and returns a typed envelope. It does NOT read env vars or import
     any program-named modules. The contract is that the OS does
     not duplicate the kernel's source-decision logic — it
     supplies the dispatch shape and lets the kernel fill the
     work item.
     """
+    from pi_monitor.work_source import (
+        Dispatch,
+        OperatorRequired,
+        Stop,
+        Wait,
+    )
+
     from research_institution.providers.research_institution_provider import (
         select_next_work_for_supervisor,
     )
 
     # No env-var churn needed; the function uses the parameter.
     env = select_next_work_for_supervisor(repository=Path("/tmp"))  # noqa: S108
-    assert env["kind"] in {"Wait", "Dispatch", "OperatorRequired", "Stop"}
-    assert "source_revision" in env
-    assert "work" in env
+    assert isinstance(env, (Wait, Dispatch, OperatorRequired, Stop))
+    assert env.source_revision
+    assert env.reason_code in {"work_available", "wait_requested", "operator_required", "stop_requested"}
+    assert env.decided_unix >= 0.0
