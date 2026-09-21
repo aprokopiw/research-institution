@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .catalog_types import GIT_REF_RE, PROGRAM_NAME_RE, ProgramTomlEntry
+    pass
 
 # Catalog schema invariants are owned by the Pydantic wire model in
 # :mod:`research_institution.catalog_types`. The Pydantic wire parse
@@ -66,6 +66,14 @@ class Program:
     live_credentials_required: bool
     live_credential_env_vars: tuple[str, ...]
     check_program_script: str
+    # Optional marker files. When the supervised repo does NOT
+    # match ``local_path`` (tests, fresh checkouts, ops mirrors),
+    # the OS resolves the program name by checking whether any
+    # marker exists under the repo root. Defaults to empty
+    # (defer entirely to ``local_path`` match). The catalog is
+    # the single source of truth for these markers; the OS does
+    # NOT hardcode program-specific filenames in source.
+    program_markers: tuple[str, ...] = ()
 
     @property
     def resolved_local_path(self) -> Path:
@@ -192,7 +200,7 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
         # the Pydantic ValidationError below catches type mismatches.
         raise ValueError(f"missing keys: {missing}")
     try:
-        ProgramTomlEntry_cls = _get_program_toml_entry()
+        program_toml_entry_cls = _get_program_toml_entry()
     except ImportError:
         # Pydantic not available (system Python via the green-gate
         # bash shim). Fall back to the legacy hand-rolled path so
@@ -200,7 +208,7 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
         return _parse_one_legacy(entry)
 
     try:
-        typed = ProgramTomlEntry_cls.model_validate(entry)
+        typed = program_toml_entry_cls.model_validate(entry)
     except Exception as exc:
         # Re-raise with a stable diagnostic; Pydantic's default
         # ``ValidationError`` lists each malformed field but uses
@@ -217,6 +225,7 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
         live_credentials_required=typed.live_credentials_required,
         live_credential_env_vars=tuple(typed.live_credential_env_vars),
         check_program_script=typed.check_program_script,
+        program_markers=tuple(typed.program_markers),
     )
 
 
@@ -256,4 +265,7 @@ def _parse_one_legacy(entry: dict[str, object]) -> Program:
         live_credentials_required=bool(entry["live_credentials_required"]),
         live_credential_env_vars=tuple(creds_list),
         check_program_script=str(entry["check_program_script"]),
+        program_markers=tuple(
+            str(m) for m in entry.get("program_markers", []) if isinstance(m, str)
+        ),
     )

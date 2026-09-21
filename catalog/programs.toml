@@ -17,3 +17,13 @@ live_credentials_required = true
 # reads OPENAI_API_KEY. See docs/semantic/adr/adr-0001-*.md.
 live_credential_env_vars = ["MATHLINT_MODEL_ROUTE"]
 check_program_script = "scripts/check-program-institution.sh"
+# Marker files that identify a directory as belonging to this
+# program. The OS layer (research-institution) uses these as a
+# secondary resolution key: when ``local_path`` does NOT match
+# the supervised repo (e.g. tests, fresh checkouts, ops-driven
+# mirrors), the OS still resolves the program name as long as
+# ANY marker file exists under the repo root.
+#
+# Catalog-driven, never hardcoded in OS source. Adding a program
+# means adding its markers here.
+program_markers = ["programs/kaplansky-roadmap.toml", "src/kaplansky/work_selection.py"]

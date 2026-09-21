@@ -68,6 +68,12 @@ class ProgramTomlEntry(BaseModel):
     live_credentials_required: bool
     live_credential_env_vars: list[str]
     check_program_script: str
+    # Optional marker files. When the supervised repo does NOT
+    # match ``local_path`` (tests, fresh checkouts, ops mirrors),
+    # the OS resolves the program name by checking whether any
+    # marker exists under the repo root. Optional; defaults to
+    # an empty list (defer entirely to ``local_path`` match).
+    program_markers: list[str] = []
 
     @field_validator("name")
     @classmethod
