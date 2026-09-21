@@ -292,6 +292,81 @@ def _repo_boundary_check() -> GateCheck:
     )
 
 
+def _v_compose_check() -> GateCheck:
+    """Run the composed-test suite (Phase J.2 v-compose tier).
+
+    The v-compose tier runs every COMPOSE-N test in the
+    institution's test surface and asserts they all pass
+    in <30 seconds. This is the V2 expression for the
+    cross-repo composition contracts: the COMPOSE tests
+    exercise the in-process composition seams (registry +
+    OS + wire round-trip + exception conversion) end-to-end
+    without subprocesses, network I/O, or real clocks.
+
+    The check runs the ``tests/test_compose_*.py`` files
+    in this repo. A regression in any composed seam
+    surfaces here with a clear failure pointing at the
+    broken COMPOSE-N.
+
+    Why a separate gate stage (rather than folded into
+    V1 unit tests): the COMPOSE tests exercise the full
+    composition seam in-process; V1 unit tests exercise
+    the leaf modules in isolation. The two tiers fail
+    differently and surface different defect classes.
+    """
+    import subprocess
+    import time
+
+    compose_dir = Path(__file__).resolve().parents[2] / "tests"
+    compose_files = sorted(compose_dir.glob("test_compose_*.py"))
+    if not compose_files:
+        return GateCheck(
+            name="v-compose",
+            status=GateStatus.SKIP,
+            detail="no test_compose_*.py files in tests/",
+        )
+    # Use the venv's python (this aggregator runs in the
+    # institution's venv; pi_monitor's pytest points at
+    # pi_monitor's venv which has a different mathlint
+    # version). Using ``python -m pytest`` ensures we
+    # invoke the in-venv pytest that sees the institution's
+    # mathlint.
+    python_exe = sys.executable
+    argv = (
+        python_exe,
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=line",
+        "--no-header",
+        *(str(p) for p in compose_files),
+    )
+    started = time.monotonic()
+    result = subprocess.run(argv, capture_output=True, text=True, check=False)
+    elapsed = time.monotonic() - started
+    if elapsed > 30:
+        return GateCheck(
+            name="v-compose",
+            status=GateStatus.FAIL,
+            detail=f"composed-test tier took {elapsed:.1f}s; budget 30s",
+            output=result.stdout + result.stderr,
+            result=result,
+        )
+    if result.returncode == 0:
+        return GateCheck(
+            name="v-compose",
+            status=GateStatus.PASS,
+            detail=f"composed-test tier ok ({elapsed:.1f}s, {len(compose_files)} files)",
+        )
+    return GateCheck(
+        name="v-compose",
+        status=GateStatus.FAIL,
+        detail="one or more COMPOSE tests failed",
+        output=result.stdout + result.stderr,
+        result=result,
+    )
+
+
 def _engine_check(*, mode: str) -> GateCheck:
     """Run mathlint's check-local-system-readiness.sh.
 
@@ -438,6 +513,7 @@ def check_institution(
     checks.append(_ruff_check())
     checks.append(_repo_boundary_check())
     checks.append(_v_wire_check(mode=mode))
+    checks.append(_v_compose_check())
     checks.append(_engine_check(mode=mode))
     checks.append(_supervisor_check())
     for program in _iter_programs():
