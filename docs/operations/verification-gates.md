@@ -17,12 +17,36 @@ evidence.
 
 | Tier | Purpose | Command | Status |
 |---|---|---|---|
-| **V0** | structural validity (lint, type, schema) | `ruff check research_institution tests` | PASS (CI + green-gate) |
+| **V0** | structural validity (lint, type, schema, repo-boundary cleanliness) | `ruff check research_institution tests` + math-side `tests/static/test_no_program_named_modules_in_tests.py` + pi_monitor-side `tests/static/test_no_program_identity_in_fixtures.py` | PASS (CI + green-gate) |
 | **V1** | fast local confidence (unit tests) | `pytest -q` | PASS (296+ tests, 2 skipped) |
 | **V-WIRE** | cross-repo composition contracts | `bash $HOME/Documents/andrei/math/scripts/autonomy.sh` (mathlint G7) | PASS / FAIL (operator decision pending on kaplansky work_source_provider) |
 | **V2** | hermetic repository confidence (full suite + green-gate) | `bash green-gate/check-institution.sh --hermetic` | PASS |
 | **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status | PARTIAL |
 | **V4** | system / release assurance (clean-install, live-mode wiring) | `bash green-gate/check-institution.sh --live` (operator-only) | BLOCKED without operator creds; hermetic variant under `RESEARCH_INSTITUTION_HERMETIC=1` |
+
+### V0 — repo-boundary static checks (BC-1, BC-4)
+
+**BC-1 (math):** `tests/static/test_no_program_named_modules_in_tests.py`
+scans `math/tests/` + `math/scripts/` for program-name literals
+(`kaplansky`, `riemann`, `navier_stokes`). Violations mean math's
+test or script surface hardcodes a specific research program,
+violating `@ADR-0014` (mathlint does not import program-named
+modules) and `@ADR-0091` (mathlint does not ship program
+launchers). A grandfather list documents each remaining
+literal with a retirement path.
+
+**BC-4 (pi_monitor):** `tests/static/test_no_program_identity_in_fixtures.py`
+scans `pi_monitor/tests/` for the same literals. Violations
+mean pi_monitor's test fixtures hardcode a specific program
+identity, violating `@ADR-0092` (pi_monitor does not name
+mathlint). The `mathlint_fixture/` contract bundle is
+grandfathered because those tests intentionally exercise the
+mathlint protocol.
+
+**Hermetic coverage:** both checks are runnable without
+network/credentials and pass under `RESEARCH_INSTITUTION_HERMETIC=1`.
+The math-side check is wired into the engine sub-step of the
+green-gate.
 
 ## V-WIRE — cross-repo composition contracts
 

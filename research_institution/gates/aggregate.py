@@ -218,6 +218,80 @@ def _v_wire_check(*, mode: str) -> GateCheck:
     )
 
 
+def _repo_boundary_check() -> GateCheck:
+    """Run BC-1 (math repo boundary) and BC-4 (pi_monitor repo boundary) static checks.
+
+    BC-1: ``tests/static/test_no_program_named_modules_in_tests.py``
+    in the math repo. Catches math test/script files that hardcode
+    a specific research-program identity (violates @ADR-0014,
+    @ADR-0091).
+
+    BC-4: ``tests/static/test_no_program_identity_in_fixtures.py``
+    in the pi_monitor repo. Catches pi_monitor test fixtures that
+    hardcode a specific research-program identity (violates
+    @ADR-0092).
+
+    Both checks are SKIP-on-missing rather than FAIL-on-missing
+    because the operator may legitimately have one repo wired but
+    not the other (cold-start scenarios).
+
+    See docs/operations/verification-gates.md (BC-1, BC-4 section).
+    """
+    failures: list[str] = []
+    skips: list[str] = []
+    # BC-1 — math
+    math_check = Path.home() / "Documents" / "andrei" / "math" / "tests" / "static" / "test_no_program_named_modules_in_tests.py"
+    math_py = Path.home() / "Documents" / "andrei" / "math" / ".venv" / "bin" / "python"
+    if not math_check.is_file():
+        skips.append("bc-1: math check script missing")
+    elif not math_py.is_file():
+        skips.append("bc-1: math .venv missing")
+    else:
+        result = run((str(math_py), str(math_check)))
+        if result.ok:
+            pass  # silent on success
+        else:
+            failures.append(f"bc-1: {result.stdout.strip()}{result.stderr.strip()}")
+    # BC-4 — pi_monitor
+    pi_check = (
+        Path.home()
+        / "Documents"
+        / "andrei"
+        / "pi_monitor"
+        / "tests"
+        / "static"
+        / "test_no_program_identity_in_fixtures.py"
+    )
+    pi_py = Path.home() / "Documents" / "andrei" / "pi_monitor" / ".venv" / "bin" / "python"
+    if not pi_check.is_file():
+        skips.append("bc-4: pi_monitor check script missing")
+    elif not pi_py.is_file():
+        skips.append("bc-4: pi_monitor .venv missing")
+    else:
+        result = run((str(pi_py), str(pi_check)))
+        if result.ok:
+            pass  # silent on success
+        else:
+            failures.append(f"bc-4: {result.stdout.strip()}{result.stderr.strip()}")
+    if failures:
+        return GateCheck(
+            name="repo-boundary",
+            status=GateStatus.FAIL,
+            detail="program-identity literals in test surfaces: " + "; ".join(failures),
+        )
+    if skips:
+        return GateCheck(
+            name="repo-boundary",
+            status=GateStatus.SKIP,
+            detail="; ".join(skips),
+        )
+    return GateCheck(
+        name="repo-boundary",
+        status=GateStatus.PASS,
+        detail="bc-1 (math) + bc-4 (pi_monitor) clean",
+    )
+
+
 def _engine_check(*, mode: str) -> GateCheck:
     """Run mathlint's check-local-system-readiness.sh.
 
@@ -362,6 +436,7 @@ def check_institution(
         raise ValueError(f"mode must be 'hermetic' or 'live'; got {mode!r}")
     checks: list[GateCheck] = []
     checks.append(_ruff_check())
+    checks.append(_repo_boundary_check())
     checks.append(_v_wire_check(mode=mode))
     checks.append(_engine_check(mode=mode))
     checks.append(_supervisor_check())
