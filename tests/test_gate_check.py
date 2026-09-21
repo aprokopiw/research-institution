@@ -273,8 +273,28 @@ def test_gate_closed_when_no_active_work_error(tmp_path: Path) -> None:
     assert "no K items active" in v.reason
 
 
-def test_gate_unknown_when_no_callable_registered(tmp_path: Path) -> None:
-    """No callable registered -> UNKNOWN with ``(no-work-selection-callable)``."""
+def test_gate_unknown_when_no_callable_registered(tmp_path: Path, monkeypatch) -> None:
+    """No callable registered -> UNKNOWN with ``(no-work-selection-callable)``.
+
+    The ``check_gate`` discovery call is monkey-patched to a no-op
+    so the installed kaplansky entry point does not populate the
+    registry during this test (the OS-level gate must report
+    UNKNOWN when no callable is registered for the program).
+    """
+    from mathlint.program_providers import (  # noqa: F401  # imported for side effect (work-selection registry)
+        discover_work_selection_programs,
+    )
+
+    monkeypatch.setattr(
+        "research_institution.cli.discover_work_selection_programs",
+        lambda: None,
+        raising=False,
+    )
+    # Also stub the import inside ``check_gate`` itself.
+    monkeypatch.setattr(
+        "mathlint.program_providers.discover_work_selection_programs",
+        lambda: None,
+    )
     v = check_gate(_prog(tmp_path))
     assert v.status == GateVerdictStatus.UNKNOWN
     assert v.task_kind == "(no-work-selection-callable)"
