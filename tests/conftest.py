@@ -16,6 +16,35 @@ REPO = Path("/Users/erinprokopiw/Documents/andrei/research-institution")
 
 
 @pytest.fixture(autouse=True)
+def _reset_work_selection_registry() -> None:
+    """Reset the kernel-blessed work-selection registry around every test.
+
+    The dispatcher (``research-institution``) reads the registry on
+    every ``read_gate`` call to resolve a program's
+    ``next_active_work`` callable. Without this fixture, a
+    ``discover_work_selection_programs`` call from one test would
+    leak into the next, polluting tests that expect an empty
+    registry (e.g. ``test_read_gate_unknown_when_no_callable_registered``).
+
+    Tests that need a populated registry should call
+    ``discover_work_selection_programs`` themselves or inject a fake
+    via ``mathlint.program_providers.set_work_selection_slot``.
+    """
+    from mathlint.program_providers import (
+        WorkSelectionSlot,
+        set_work_selection_slot,
+        work_selection_slot,
+    )
+
+    prior = work_selection_slot()
+    set_work_selection_slot(WorkSelectionSlot())
+    try:
+        yield
+    finally:
+        set_work_selection_slot(prior)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Make tests deterministic: redirect env vars; leave PATH alone.
 

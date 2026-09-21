@@ -12,8 +12,7 @@ owns (per @ADR-0006). These tests prove:
 
 from __future__ import annotations
 
-import shutil
-import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,6 @@ from research_institution.contracts import (
     TaskKind,
     gate_verdict_from_task_kind,
 )
-from research_institution.contracts.gate_verdict import TASK_KIND_ABSENT as _TASK_KIND_ABSENT
 
 # A realistic roadmap excerpt with the gate CLOSED.
 ROADMAP_CLOSED = """\
@@ -91,6 +89,15 @@ def _fake_program(tmp_path: Path) -> Program:
 
 # ---------------------------------------------------------------------------
 # Pure parser tests (no subprocess, no I/O).
+#
+# These tests pin the ``GateVerdict.from_text`` parser. The parser is
+# retained as a public utility (legacy mathlint-roadmap-snapshot
+# parsing) but is no longer invoked by ``check_gate``; ``check_gate``
+# now probes the program-supplied work-selection callable through
+# the kernel-blessed ``mathlint.program_work_selection`` entry-point
+# registry. The parser tests below are kept so a future regression in
+# the text-based parser surfaces immediately, even though the
+# dispatcher's primary path no longer exercises it.
 # ---------------------------------------------------------------------------
 
 
@@ -150,105 +157,139 @@ def test_gate_verdict_status_predicate_matches_mapping_function() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Subprocess wrapper tests (use monkeypatch on subprocess.run).
+# CLI wrapper tests (probe the program-supplied work-selection callable).
 # ---------------------------------------------------------------------------
 
 
-def test_gate_closed_when_architecture_review_required(tmp_path: Path, monkeypatch) -> None:
-    """Closed gate -> GateVerdict with status=CLOSED + REASON surfaced."""
-    import subprocess as sp
+def _make_work_request(operation_id: str = "K4"):
+    """Build a minimal WorkRequest for check_gate probe tests."""
+    from datetime import UTC, datetime
 
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=ROADMAP_CLOSED, stderr="")
+    from pi_monitor.work.work_source import SourceRevision, WorkRequest
 
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path), mathlint_bin="mathlint")
-    assert v.task_kind == TaskKind.ARCHITECTURE_REVIEW_REQUIRED.value
-    assert v.status == GateVerdictStatus.CLOSED
-    assert v.gate_open is False
-    assert "no unique approved" in v.reason
-
-
-def test_gate_open_when_task_kind_is_research(tmp_path: Path, monkeypatch) -> None:
-    """Open gate -> GateVerdict with gate_open=True."""
-    import subprocess as sp
-
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=ROADMAP_OPEN, stderr="")
-
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path))
-    assert v.task_kind == TaskKind.RESEARCH.value
-    assert v.gate_open is True
-    assert v.reason == ""
-
-
-def test_gate_open_when_task_kind_absent(tmp_path: Path, monkeypatch) -> None:
-    """Legacy/hermetic roadmap (no TASK KIND line) -> gate_open=True."""
-    import subprocess as sp
-
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=ROADMAP_NO_TASK_KIND, stderr="")
-
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path))
-    assert v.task_kind == TASK_KIND_ABSENT
-    assert v.gate_open is True
-
-
-def test_gate_closed_when_roadmap_fails(tmp_path: Path, monkeypatch) -> None:
-    """mathlint roadmap nonzero exit -> status=UNKNOWN with diagnostic."""
-    import subprocess as sp
-
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 3, stdout="", stderr="FATAL: no mathlint.toml")
-
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path))
-    assert v.status == GateVerdictStatus.UNKNOWN
-    assert v.gate_open is False
-    assert "(roadmap-failed)" in v.task_kind
-    assert "3" in v.reason
-    assert "FATAL" in v.raw_excerpt
-
-
-def test_raw_excerpt_is_last_400_chars(tmp_path: Path, monkeypatch) -> None:
-    """raw_excerpt is exactly the last 400 chars of roadmap output.
-
-    Mutation-test oracle (see verification audit): a regression that
-    truncates to 100 chars (or any other width) loses diagnostic
-    context for operators. The exact-400 invariant is pinned here.
-    """
-    import subprocess as sp
-
-    long_text = "X" * 600  # 600 chars; only last 400 should survive
-    long_text += "\nTASK KIND: ARCHITECTURE_REVIEW_REQUIRED\n"
-
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=long_text, stderr="")
-
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path))
-    # Length must be exactly 400 when the source is longer.
-    assert len(v.raw_excerpt) == 400, (
-        f"raw_excerpt length drifted: got {len(v.raw_excerpt)}, expected 400"
+    observed = datetime.now(tz=UTC).timestamp()
+    return WorkRequest(
+        source_identity="x-test-program",
+        source_revision=SourceRevision(
+            fingerprint="0" * 40,
+            observed_unix=observed,
+            label="stub",
+        ),
+        operation_id=operation_id,
+        operation_kind="mathlint-research",
+        role="MATHEMATICAL_RESEARCH",
+        workspace="stub-workspace",
+        payload={},
     )
-    # And it must be the LAST 400 chars (suffix, not prefix).
-    assert v.raw_excerpt == long_text[-400:]
 
 
-def test_raw_excerpt_short_text_is_verbatim(tmp_path: Path, monkeypatch) -> None:
-    """When the source is shorter than 400 chars, raw_excerpt == source."""
-    import subprocess as sp
+@contextmanager
+def _register_callable(name: str, callable_obj):
+    """Install a fake work-selection callable into the kernel registry."""
+    from mathlint.program_providers import (
+        WorkSelectionSlot,
+        set_work_selection_slot,
+        work_selection_slot,
+    )
 
-    short_text = "TASK KIND: RESEARCH\n"  # 18 chars
+    prior = work_selection_slot()
+    new_selectors = dict(prior.selectors)
+    new_selectors[name] = callable_obj
+    set_work_selection_slot(WorkSelectionSlot(selectors=new_selectors))
+    try:
+        yield
+    finally:
+        set_work_selection_slot(prior)
 
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=short_text, stderr="")
 
-    monkeypatch.setattr(sp, "run", fake_run)
-    v = check_gate(_fake_program(tmp_path))
-    assert v.raw_excerpt == short_text
+class RoadmapNotFoundError(LookupError):
+    pass
+
+
+class NoActiveWorkError(LookupError):
+    pass
+
+
+def _prog(tmp_path: Path, name: str = "kaplansky") -> Program:
+    return Program(
+        name=name,
+        display_name="X",
+        repository="https://x/x",
+        entry_point="x:r",
+        local_path=str(tmp_path),
+        mathlint_pin="v0.0.1",
+        live_credentials_required=False,
+        live_credential_env_vars=(),
+        check_program_script="check.sh",
+    )
+
+
+def test_gate_open_when_program_returns_active_work(tmp_path: Path) -> None:
+    """Closed-program open gate -> check_gate returns OPEN with the
+    active operation_id surfaced as ``task_kind``.
+    """
+    def callable_obj(repository, *, source_revision):
+        return [_make_work_request("K4")]
+
+    with _register_callable("kaplansky", callable_obj):
+        v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.OPEN
+    assert v.task_kind == "K4"
+    assert v.gate_open is True
+
+
+def test_gate_closed_when_no_active_work(tmp_path: Path) -> None:
+    """Empty work list -> CLOSED with the canonical ``(no-active-work)`` sentinel."""
+    def callable_obj(repository, *, source_revision):
+        return []
+
+    with _register_callable("kaplansky", callable_obj):
+        v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(no-active-work)"
+    assert v.gate_open is False
+
+
+def test_gate_closed_when_roadmap_missing(tmp_path: Path) -> None:
+    """RoadmapNotFoundError -> CLOSED with ``(roadmap-missing)``."""
+    def callable_obj(repository, *, source_revision):
+        raise RoadmapNotFoundError("missing roadmap")
+
+    with _register_callable("kaplansky", callable_obj):
+        v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(roadmap-missing)"
+
+
+def test_gate_closed_when_no_active_work_error(tmp_path: Path) -> None:
+    """NoActiveWorkError -> CLOSED with ``(no-active-work)``."""
+    def callable_obj(repository, *, source_revision):
+        raise NoActiveWorkError("no K items active")
+
+    with _register_callable("kaplansky", callable_obj):
+        v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(no-active-work)"
+    assert "no K items active" in v.reason
+
+
+def test_gate_unknown_when_no_callable_registered(tmp_path: Path) -> None:
+    """No callable registered -> UNKNOWN with ``(no-work-selection-callable)``."""
+    v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.UNKNOWN
+    assert v.task_kind == "(no-work-selection-callable)"
+
+
+def test_gate_unknown_when_callable_raises_unexpected(tmp_path: Path) -> None:
+    """Unknown exception family -> UNKNOWN with diagnostic + (roadmap-failed) sentinel."""
+    def callable_obj(repository, *, source_revision):
+        raise RuntimeError("disk on fire")
+
+    with _register_callable("kaplansky", callable_obj):
+        v = check_gate(_prog(tmp_path))
+    assert v.status == GateVerdictStatus.UNKNOWN
+    assert v.task_kind == "(roadmap-failed)"
+    assert "disk on fire" in v.reason
 
 
 def test_from_text_raw_excerpt_is_last_400_chars() -> None:
@@ -263,18 +304,28 @@ def test_from_text_raw_excerpt_is_last_400_chars() -> None:
 
 
 def test_start_refuses_on_closed_gate(cli_runner, tmp_path: Path, monkeypatch) -> None:
-    """End-to-end: `research start <prog>` (non-dry-run) refuses on closed gate."""
-    import subprocess as sp
+    """End-to-end: `research start <prog>` (non-dry-run) refuses on closed gate.
 
+    The CLI delegates the gate check to ``Dispatcher.read_gate``,
+    which probes the program-supplied work-selection callable. Tests
+    inject a fake callable that returns an empty list (=> CLOSED).
+    """
     import research_institution.cli as cli_mod
+    from research_institution.contracts import GateVerdict
+    from research_institution.dispatcher import Dispatcher
 
-    monkeypatch.setattr(cli_mod, "_require_program", lambda name: _fake_program(tmp_path))
-    monkeypatch.setattr(cli_mod, "_load", lambda: [_fake_program(tmp_path)])
+    prog = _prog(tmp_path, name="x")
+    monkeypatch.setattr(cli_mod, "_require_program", lambda name: prog)
+    monkeypatch.setattr(cli_mod, "_load", lambda: [prog])
 
-    def fake_run(cmd, **kw):
-        return sp.CompletedProcess(cmd, 0, stdout=ROADMAP_CLOSED, stderr="")
+    def fake_read_gate(self, p, **_kw):
+        return GateVerdict(
+            task_kind="ARCHITECTURE_REVIEW_REQUIRED",
+            status=GateVerdictStatus.CLOSED,
+            reason="completed outcome has no unique approved on_failure edge.",
+        )
 
-    monkeypatch.setattr(sp, "run", fake_run)
+    monkeypatch.setattr(Dispatcher, "read_gate", fake_read_gate)
 
     result = cli_runner.invoke(args=["start", "x"], catch_exceptions=False)
     assert result.exit_code == EXIT_GATE_CLOSED, (
@@ -287,19 +338,23 @@ def test_start_refuses_on_closed_gate(cli_runner, tmp_path: Path, monkeypatch) -
 
 
 def test_start_skip_gate_proceeds(cli_runner, tmp_path: Path, monkeypatch) -> None:
-    """`research start <prog> --skip-gate` bypasses the gate + delegates."""
+    """`research start <prog> --skip-gate` bypasses the gate + delegates.
+
+    The dispatcher layer is fully short-circuited by the CLI's
+    ``--skip-gate`` flag — the test does not need to fake the gate.
+    The fake mathlint binary is provided by ``conftest``.
+    """
     import subprocess as sp
 
     import research_institution.cli as cli_mod
 
-    monkeypatch.setattr(cli_mod, "_require_program", lambda name: _fake_program(tmp_path))
-    monkeypatch.setattr(cli_mod, "_load", lambda: [_fake_program(tmp_path)])
+    prog = _prog(tmp_path, name="x")
+    monkeypatch.setattr(cli_mod, "_require_program", lambda name: prog)
+    monkeypatch.setattr(cli_mod, "_load", lambda: [prog])
     monkeypatch.setattr(
-        sp, "run", lambda *a, **kw: sp.CompletedProcess(a[0], 0, stdout=ROADMAP_CLOSED, stderr="")
+        sp, "run", lambda *a, **kw: sp.CompletedProcess(a[0], 0, stdout="", stderr="")
     )
-    # Mathlint binary must resolve from PATH; conftest puts a fake one in shims.
     result = cli_runner.invoke(args=["start", "x", "--skip-gate"], catch_exceptions=False)
-    # The fake mathlint exits 0; the dispatcher should also exit 0.
     assert result.exit_code == 0, f"got {result.exit_code}; stdout={result.stdout!r}"
     combined = (result.stdout or "") + (getattr(result, "stderr", "") or "")
     assert "--skip-gate" in combined or "bypassed" in combined.lower()
@@ -350,53 +405,73 @@ def _resolve_real_mathlint_root(tmp_path: Path) -> Path | None:
     return None
 
 
-def test_cross_repo_010_real_mathlint_roadmap_task_kind_is_known(tmp_path: Path) -> None:
+def test_cross_repo_010_check_gate_uses_real_catalog_entry(tmp_path: Path) -> None:
     """CROSS_REPO_010 — invoking ``check_gate`` against the operator's
-    real mathlint + real roadmap MUST return a ``task_kind`` that is
-    either a known ``TaskKind`` enum value or the documented
-    ``TASK_KIND_ABSENT`` sentinel. An OTHER fallback is acceptable as
-    a runtime safety net but the test fails to surface it.
+    real catalog entry MUST return a verdict derived from the
+    program-supplied work-selection callable (no subprocess; per
+    @ADR-0014 the dispatcher does not shell out to ``mathlint
+    roadmap`` against a program repo).
 
-    Skipped when mathlint isn't on PATH or the catalog isn't reachable
-    (clean CI runner). The test runs end-to-end on the operator's
-    wired machine, exercising the same code path ``research start``
-    takes on every launch.
+    The verdict MUST be one of:
+
+      - status=OPEN + ``task_kind=<operation_id>`` if the program
+        has active work,
+      - status=CLOSED + ``task_kind=(no-active-work)`` if the
+        program has no active item,
+      - status=CLOSED + ``task_kind=(roadmap-missing)`` if the
+        program's roadmap is missing,
+      - status=UNKNOWN + a diagnostic sentinel otherwise.
+
+    Skipped when the catalog isn't reachable (clean CI runner).
+    The test runs end-to-end on the operator's wired machine,
+    exercising the same code path ``research start`` takes on
+    every launch.
     """
-    mathlint_bin = shutil.which("mathlint")
-    if mathlint_bin is None:
-        pytest.skip("CROSS_REPO_010: mathlint not on PATH")
-
     project_root = _resolve_real_mathlint_root(tmp_path)
     if project_root is None:
         pytest.skip("CROSS_REPO_010: cannot resolve kaplansky project root")
     if not project_root.is_dir():
         pytest.skip(f"CROSS_REPO_010: project root {project_root} unreachable")
 
-    program = _fake_program(project_root)
     try:
-        verdict = check_gate(program, mathlint_bin=mathlint_bin)
-    except subprocess.TimeoutExpired:
-        pytest.skip("CROSS_REPO_010: mathlint roadmap timed out")
+        from research_institution.catalog import load_catalog
+        from research_institution.paths import catalog_path
 
-    known = {kind.value for kind in TaskKind} | {_TASK_KIND_ABSENT}
-    if verdict.task_kind not in known:
-        pytest.fail(
-            f"CROSS_REPO_010 FAIL: mathlint roadmap returned an unrecognized "
-            f"TASK KIND {verdict.task_kind!r}. Known: {sorted(known)}. The "
-            f"parser's defensive OTHER-fallback kicked in silently. "
-            f"raw_excerpt={verdict.raw_excerpt[:200]!r}"
+        programs = load_catalog(catalog_path())
+    except (OSError, ValueError, ImportError, RuntimeError):
+        pytest.skip("CROSS_REPO_010: catalog unreadable")
+
+    program = next((p for p in programs if p.name == "kaplansky"), None)
+    if program is None:
+        pytest.skip("CROSS_REPO_010: catalog has no kaplansky entry")
+
+    try:
+        from mathlint.program_providers import (
+            discover_work_selection_programs,
+            work_selection_callables,
         )
+    except ImportError:
+        pytest.skip("CROSS_REPO_010: mathlint.program_providers unimportable")
+    discover_work_selection_programs()
+    if "kaplansky" not in work_selection_callables():
+        pytest.skip("CROSS_REPO_010: kaplansky entry point not installed")
 
-    # Surface the silent-OTHER mapping loudly so the operator can
-    # decide whether to upgrade OTHER to a real enum value. A
-    # task_kind of "OTHER" + an OPEN gate is the documented safe
-    # default, but it should not go unnoticed.
-    if verdict.task_kind == TaskKind.OTHER.value:
+    verdict = check_gate(program, mathlint_bin="mathlint")
+
+    valid_kinds = {
+        "RESEARCH",
+        "(no-active-work)",
+        "(roadmap-missing)",
+        "(no-work-selection-callable)",
+        "(roadmap-failed)",
+    }
+    if verdict.status == GateVerdictStatus.OPEN and verdict.task_kind not in valid_kinds:
+        # OPEN verdicts carry the operation_id verbatim — accept.
+        pass
+    elif verdict.task_kind not in valid_kinds:
         pytest.fail(
-            f"CROSS_REPO_010: mathlint roadmap returned an unrecognized "
-            f"TASK KIND that the parser silently mapped to OTHER (gate "
-            f"OPEN by default). Find the new value in the raw_excerpt "
-            f"and decide whether to add it to the TaskKind enum or "
-            f"tighten the gate. raw_excerpt={verdict.raw_excerpt[:400]!r}"
+            f"CROSS_REPO_010 FAIL: check_gate returned an unexpected "
+            f"verdict kind {verdict.task_kind!r} (status={verdict.status}). "
+            f"Expected one of {sorted(valid_kinds)}. reason={verdict.reason!r}"
         )
 

@@ -143,21 +143,25 @@ def test_task_kind_roadmap_failed_sentinel_canonical() -> None:
 
 def test_dispatcher_read_gate_uses_roadmap_failed_constant(tmp_path) -> None:
     """:func:`research_institution.dispatcher.read_gate` flows
-    :data:`TASK_KIND_ROADMAP_FAILED` verbatim when mathlint roadmap
-    exits non-zero. Pin via behavior test using FakeEnvironment +
-    an injected runner that returns rc=1.
+    :data:`TASK_KIND_ROADMAP_FAILED` verbatim when the program-supplied
+    work-selection callable raises an exception outside the recognised
+    ``RoadmapNotFoundError`` / ``NoActiveWorkError`` family. This is the
+    dispatcher's "probe boundary" sentinel.
     """
     from research_institution.contracts import (
         TASK_KIND_ROADMAP_FAILED,
         GateVerdictStatus,
     )
     from research_institution.dispatcher import Dispatcher
-    from tests._fakes import FakeRunner, QueuedResponse
-    from tests.test_dispatcher import _fake_program
+    from tests._fakes import FakeRunner
+    from tests.test_dispatcher import _fake_program, _register_callable
 
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=1, stderr="mathlint: command not found"))
-    d = Dispatcher(runner=runner)
-    verdict = d.read_gate(_fake_program(tmp_path), timeout_seconds=5.0)
+    def callable_obj(repository, *, source_revision):
+        raise RuntimeError("kaplansky: command not found")
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        verdict = d.read_gate(prog, timeout_seconds=5.0)
     assert verdict.task_kind == TASK_KIND_ROADMAP_FAILED
     assert verdict.status is GateVerdictStatus.UNKNOWN

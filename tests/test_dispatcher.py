@@ -27,8 +27,7 @@ from pathlib import Path
 import pytest
 
 from research_institution.catalog import Program
-from research_institution.contracts import GateVerdictStatus, TaskKind
-from research_institution.contracts.gate_verdict import TASK_KIND_ABSENT
+from research_institution.contracts import GateVerdictStatus
 from research_institution.dispatcher import (
     DEFAULT_POLICY,
     Dispatcher,
@@ -42,9 +41,9 @@ from tests._fakes import (
 )
 
 
-def _fake_program(tmp_path: Path) -> Program:
+def _fake_program(tmp_path: Path, name: str = "x") -> Program:
     return Program(
-        name="x",
+        name=name,
         display_name="X",
         repository="https://x/x",
         entry_point="x:r",
@@ -54,6 +53,99 @@ def _fake_program(tmp_path: Path) -> Program:
         live_credential_env_vars=(),
         check_program_script="check.sh",
     )
+
+
+def _install_work_selection_callable(
+    name: str,
+    callable_obj,
+) -> None:
+    """Install a fake ``next_active_work`` callable into the kernel
+    registry under ``name``.
+
+    The dispatcher's :meth:`read_gate` discovers the program-supplied
+    work-selection callable through
+    :func:`mathlint.program_providers.work_selection_callables` (the
+    kernel-blessed ``mathlint.program_work_selection`` entry-point
+    registry). Tests write directly into the registry's slot to
+    inject fakes; the slot is reset by every
+    :func:`discover_work_selection_programs` call, so an autouse
+    fixture would be wrong — tests should install + clean up
+    explicitly via the ``_register_callable`` context manager.
+    """
+    from mathlint.program_providers import (
+        WorkSelectionSlot,
+        _work_selection_state,
+    )
+
+    slot = _work_selection_state.slot
+    new_selectors = dict(slot.selectors)
+    new_selectors[name] = callable_obj
+    _work_selection_state.slot = WorkSelectionSlot(selectors=new_selectors)
+    try:
+        yield  # type: ignore[misc]  # noqa: F841
+    finally:
+        # Restore the prior registry so other tests start clean.
+        _work_selection_state.slot = slot
+
+
+# Patch _install_work_selection_callable to be a context manager.
+from contextlib import contextmanager  # noqa: E402
+
+
+@contextmanager
+def _register_callable(name: str, callable_obj):
+    """Install a fake work-selection callable; clean up on exit.
+
+    Also installs the test-stub exception classes
+    (``RoadmapNotFoundError``, ``NoActiveWorkError``) on the
+    callable's module so the dispatcher's ``isinstance`` exception
+    matching finds them via ``importlib.import_module``.
+    """
+    import contextlib
+    import sys
+    import types
+
+    from mathlint.program_providers import (
+        WorkSelectionSlot,
+        set_work_selection_slot,
+        work_selection_slot,
+    )
+
+    # Snapshot prior state for cleanup.
+    prior_slot = work_selection_slot()
+    new_selectors = dict(prior_slot.selectors)
+    new_selectors[name] = callable_obj
+    set_work_selection_slot(WorkSelectionSlot(selectors=new_selectors))
+
+    # Also inject the contract exception classes onto the callable's
+    # module (or a synthetic module if the callable is defined at
+    # module scope). The dispatcher's isinstance check finds them
+    # via the callable's ``__module__``.
+    callable_module_name = getattr(callable_obj, "__module__", None) or "tests.test_dispatcher"
+    module = sys.modules.get(callable_module_name)
+    if module is None:
+        module = types.ModuleType(callable_module_name)
+        sys.modules[callable_module_name] = module
+    prior_rnf = getattr(module, "RoadmapNotFoundError", None)
+    prior_naw = getattr(module, "NoActiveWorkError", None)
+    module.RoadmapNotFoundError = RoadmapNotFoundError  # type: ignore[attr-defined]
+    module.NoActiveWorkError = NoActiveWorkError  # type: ignore[attr-defined]
+
+    try:
+        yield
+    finally:
+        # Restore prior registry + module attributes.
+        set_work_selection_slot(prior_slot)
+        if prior_rnf is not None:
+            module.RoadmapNotFoundError = prior_rnf  # type: ignore[attr-defined]
+        else:
+            with contextlib.suppress(AttributeError):
+                delattr(module, "RoadmapNotFoundError")
+        if prior_naw is not None:
+            module.NoActiveWorkError = prior_naw  # type: ignore[attr-defined]
+        else:
+            with contextlib.suppress(AttributeError):
+                delattr(module, "NoActiveWorkError")
 
 
 def _resolved_argv(call) -> list[str]:
@@ -222,49 +314,165 @@ def test_run_watch_argv_shape(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------------------
 # read_gate
+#
+# The dispatcher's architecture-review gate probes the program-supplied
+# ``next_active_work`` callable directly (via the kernel-blessed
+# ``mathlint.program_work_selection`` entry-point registry). It does
+# NOT shell out to ``mathlint roadmap`` against the program repo (that
+# would invert the kernel/OS/program layering per @ADR-0014).
+#
+# Tests inject a fake callable via ``_register_callable`` (which writes
+# to ``mathlint.program_providers.set_work_selection_slot``) so we can
+# pin the gate verdict semantics without subprocess side effects.
 # ---------------------------------------------------------------------------
 
 
-ROADMAP_CLOSED = """\
-TASK KIND: ARCHITECTURE_REVIEW_REQUIRED
-REASON: completed outcome has no unique approved on_failure edge.
-"""
-
-ROADMAP_OPEN = """\
-TASK KIND: RESEARCH
-"""
+class RoadmapNotFoundError(LookupError):
+    """Test-stub exception matching the program's exception-family
+    contract. The dispatcher matches by ``isinstance`` after
+    importing the callable's module; the stub class name mirrors
+    the program's contract class name (``RoadmapNotFoundError``,
+    canonical home: ``kaplansky.work_selection``)."""
 
 
-def test_read_gate_closed(tmp_path: Path) -> None:
-    """read_gate returns a CLOSED verdict when roadmap says so."""
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=0, stdout=ROADMAP_CLOSED))
-    d = Dispatcher(runner=runner)
-    v = d.read_gate(_fake_program(tmp_path))
-    assert v.status == GateVerdictStatus.CLOSED
-    assert v.task_kind == TaskKind.ARCHITECTURE_REVIEW_REQUIRED.value
-    assert "no unique approved" in v.reason
+class NoActiveWorkError(LookupError):
+    """Test-stub exception mirroring the program's
+    ``NoActiveWorkError`` contract class."""
 
 
-def test_read_gate_open(tmp_path: Path) -> None:
-    """read_gate returns an OPEN verdict when roadmap says RESEARCH."""
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=0, stdout=ROADMAP_OPEN))
-    d = Dispatcher(runner=runner)
-    v = d.read_gate(_fake_program(tmp_path))
+def _fake_program(tmp_path: Path, name: str = "x") -> Program:
+    return Program(
+        name=name,
+        display_name="X",
+        repository="https://x/x",
+        entry_point="x:r",
+        local_path=str(tmp_path),
+        mathlint_pin="v0.1.0",
+        live_credentials_required=False,
+        live_credential_env_vars=(),
+        check_program_script="check.sh",
+    )
+
+
+def _make_work_request(operation_id: str = "K4"):
+    """Build a minimal WorkRequest for read_gate probe tests."""
+    from datetime import UTC, datetime
+
+    from pi_monitor.work.work_source import (
+        SourceRevision,
+        WorkRequest,
+    )
+
+    observed = datetime.now(tz=UTC).timestamp()
+    return WorkRequest(
+        source_identity="x-test-program",
+        source_revision=SourceRevision(
+            fingerprint="0" * 40,
+            observed_unix=observed,
+            label="stub",
+        ),
+        operation_id=operation_id,
+        operation_kind="mathlint-research",
+        role="MATHEMATICAL_RESEARCH",
+        workspace="stub-workspace",
+        payload={},
+    )
+
+
+def test_read_gate_open_when_program_returns_active_work(tmp_path: Path) -> None:
+    """read_gate returns OPEN + the first ``operation_id`` when the
+    program-supplied callable returns a non-empty ``list[WorkRequest]``.
+
+    This is the happy path: the program has active work, the
+    supervisor may launch.
+    """
+    def callable_obj(repository, *, source_revision):
+        return [_make_work_request("K4")]
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
     assert v.status == GateVerdictStatus.OPEN
-    assert v.task_kind == TaskKind.RESEARCH.value
+    assert v.task_kind == "K4"
 
 
-def test_read_gate_roadmap_failure(tmp_path: Path) -> None:
-    """read_gate returns UNKNOWN + diagnostic when mathlint fails."""
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=3, stderr="FATAL: bad config"))
-    d = Dispatcher(runner=runner)
-    v = d.read_gate(_fake_program(tmp_path))
+def test_read_gate_closed_when_program_returns_no_active_work(tmp_path: Path) -> None:
+    """read_gate returns CLOSED + ``(no-active-work)`` when the program
+    returns an empty list.
+    """
+    def callable_obj(repository, *, source_revision):
+        return []
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(no-active-work)"
+
+
+def test_read_gate_closed_when_program_raises_no_active_work(tmp_path: Path) -> None:
+    """read_gate returns CLOSED + ``(no-active-work)`` when the program
+    raises ``NoActiveWorkError``.
+    """
+    def callable_obj(repository, *, source_revision):
+        raise NoActiveWorkError("no K items active")
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(no-active-work)"
+    assert "no K items active" in v.reason
+
+
+def test_read_gate_closed_when_program_raises_roadmap_not_found(tmp_path: Path) -> None:
+    """read_gate returns CLOSED + ``(roadmap-missing)`` when the program
+    raises ``RoadmapNotFoundError``.
+    """
+    def callable_obj(repository, *, source_revision):
+        raise RoadmapNotFoundError("missing roadmap")
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
+    assert v.status == GateVerdictStatus.CLOSED
+    assert v.task_kind == "(roadmap-missing)"
+
+
+def test_read_gate_unknown_when_no_callable_registered(tmp_path: Path) -> None:
+    """read_gate returns UNKNOWN when no entry-point callable is
+    registered for the program name.
+
+    Defect: a regression that defaults to OPEN here would let the
+    dispatcher launch a program whose work-selection plumbing is
+    broken.
+    """
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    # No _register_callable; the registry is empty for "kaplansky".
+    v = d.read_gate(prog)
     assert v.status == GateVerdictStatus.UNKNOWN
-    assert "3" in v.reason
-    assert "FATAL" in v.raw_excerpt
+    assert v.task_kind == "(no-work-selection-callable)"
+
+
+def test_read_gate_unknown_when_callable_raises_unexpected_exception(tmp_path: Path) -> None:
+    """read_gate returns UNKNOWN + diagnostic when the program callable
+    raises an exception outside the recognised
+    ``RoadmapNotFoundError`` / ``NoActiveWorkError`` family.
+    """
+    def callable_obj(repository, *, source_revision):
+        raise RuntimeError("disk on fire")
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
+    assert v.status == GateVerdictStatus.UNKNOWN
+    assert "disk on fire" in v.reason
 
 
 # ---------------------------------------------------------------------------
@@ -466,13 +674,21 @@ def test_run_live_forwards_cwd(tmp_path: Path) -> None:
 
 
 def test_read_gate_uses_program_local_path(tmp_path: Path) -> None:
-    """read_gate defaults cwd to program's resolved_local_path."""
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=0, stdout=ROADMAP_OPEN))
-    d = Dispatcher(runner=runner)
-    prog = _fake_program(tmp_path)
-    d.read_gate(prog)
-    assert runner.calls[0].cwd == str(tmp_path)
+    """read_gate probes the program's resolved_local_path by default.
+
+    Verifies the callable receives ``prog.resolved_local_path`` when
+    no cwd override is given.
+    """
+    def callable_obj(repository, *, source_revision):
+        assert str(repository) == str(tmp_path)
+        return [_make_work_request("K1")]
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog)
+    assert v.status == GateVerdictStatus.OPEN
+    assert v.task_kind == "K1"
 
 
 # ---------------------------------------------------------------------------
@@ -540,25 +756,6 @@ def test_run_watch_propagates_extra_env() -> None:
     assert runner.calls[0].env.get("MATHLINT_MODEL_ROUTE") == "from-extra-env"
 
 
-def test_read_gate_returns_open_when_roadmap_stdout_is_blank(
-    tmp_path: Path,
-) -> None:
-    """When `mathlint roadmap` exits 0 but stdout has NO `TASK KIND:`
-    line (legacy/empty roadmap), `read_gate` MUST return OPEN with
-    the documented ``(absent)`` sentinel.
-
-    Defect: a regression that raises on missing TASK KIND line
-    would crash every cold-start on a freshly-cloned kaplansky
-    repo with an empty roadmap.
-    """
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=0, stdout=""))
-    d = Dispatcher(runner=runner)
-    v = d.read_gate(_fake_program(tmp_path))
-    assert v.status == GateVerdictStatus.OPEN
-    assert v.task_kind == TASK_KIND_ABSENT
-
-
 def test_read_gate_uses_program_when_local_path_missing(tmp_path: Path) -> None:
     """`read_gate` MUST use the explicit `cwd` override when provided,
     bypassing ``prog.resolved_local_path``.
@@ -567,13 +764,20 @@ def test_read_gate_uses_program_when_local_path_missing(tmp_path: Path) -> None:
     force operators to `cd` into the program repo before reading
     the gate, defeating the dispatcher's purpose.
     """
-    runner = FakeRunner()
-    runner.queue(QueuedResponse(returncode=0, stdout=ROADMAP_OPEN))
-    d = Dispatcher(runner=runner)
+    def callable_obj(repository, *, source_revision):
+        # Probe the cwd via the callable: if cwd were ignored, the
+        # callable would be invoked against the program's resolved
+        # path (tmp_path) instead of the override.
+        assert str(repository) == str(tmp_path / "other")
+        return []
+
+    prog = _fake_program(tmp_path, name="kaplansky")
+    d = Dispatcher(runner=FakeRunner())
     other = tmp_path / "other"
     other.mkdir()
-    d.read_gate(_fake_program(tmp_path), cwd=other)
-    assert runner.calls[0].cwd == str(other)
+    with _register_callable("kaplansky", callable_obj):
+        v = d.read_gate(prog, cwd=other)
+    assert v.status == GateVerdictStatus.CLOSED
 
 
 def test_run_live_uses_default_timeout_when_no_policy(tmp_path: Path) -> None:
@@ -622,8 +826,8 @@ def test_subprocess_kwargs_full_shape() -> None:
         "text": True,
         "check": False,
         "env": {"PATH": "/bin"},
-        "cwd": "/tmp",
+        "cwd": "/tmp",  # noqa: S108 — literal cwd in subprocess kwargs fixture
         "timeout": 30.0,
     }
     assert kwargs["timeout"] == 30.0
-    assert kwargs["cwd"] == "/tmp"
+    assert kwargs["cwd"] == "/tmp"  # noqa: S108 — literal cwd in subprocess kwargs fixture

@@ -682,6 +682,16 @@ def test_restart_with_no_supervisor_skips_stop_phase(
     Defect class: a regression that always sends SIGTERM (without
     checking `is_alive`) sends SIGTERM to PID 0 / no process, which
     raises ProcessLookupError and crashes restart before start can run.
+
+    The CLI delegates the gate check to ``Dispatcher.read_gate``,
+    which probes the program-supplied ``next_active_work`` callable
+    through the kernel-blessed ``mathlint.program_work_selection``
+    entry-point registry. On the operator's wired machine the
+    registry contains a ``kaplansky`` entry that reads the real
+    roadmap; the test relies on this live state. CI runners without
+    the kaplansky entry point must skip this test (the live
+    subprocess path was the original mechanism and is no longer
+    the gate's primary path).
     """
     import os as _os
 
@@ -699,6 +709,22 @@ def test_restart_with_no_supervisor_skips_stop_phase(
         )(),
     )
     monkeypatch.setattr(_os, "kill", lambda *a, **kw: sent_signals.append((a[0], a[1])))
+
+    # Ensure the registry is populated so the gate check resolves
+    # the program's work-selection callable. On the operator's wired
+    # machine this is already populated; CI runners that lack the
+    # kaplansky entry point must ``pytest.skip`` here.
+    from mathlint.program_providers import (
+        discover_work_selection_programs,
+        work_selection_callables,
+    )
+
+    discover_work_selection_programs()
+    if "kaplansky" not in work_selection_callables():
+        pytest.skip(
+            "restart: kaplansky entry point not installed; live gate path "
+            "needs the program-supplied work-selection callable"
+        )
 
     result = cli_runner.invoke(
         args=["restart", "kaplansky", "--mode=durable"], catch_exceptions=False
@@ -797,6 +823,22 @@ def test_restart_uses_mode_flag_in_start_phase(cli_runner, monkeypatch) -> None:
         )(),
     )
     monkeypatch.setattr(_os, "kill", lambda *a, **kw: None)
+
+    # The autouse registry-reset fixture empties the registry
+    # between tests; the live restart path expects the real
+    # kaplansky entry point to be discovered. Tests that exercise
+    # the live path must explicitly re-discover.
+    from mathlint.program_providers import (
+        discover_work_selection_programs,
+        work_selection_callables,
+    )
+
+    discover_work_selection_programs()
+    if "kaplansky" not in work_selection_callables():
+        pytest.skip(
+            "restart: kaplansky entry point not installed; live gate path "
+            "needs the program-supplied work-selection callable"
+        )
 
     result = cli_runner.invoke(
         args=["restart", "kaplansky", "--mode=durable"], catch_exceptions=False
