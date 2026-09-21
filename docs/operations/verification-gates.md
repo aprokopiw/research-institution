@@ -20,8 +20,9 @@ evidence.
 | **V0** | structural validity (lint, type, schema, repo-boundary cleanliness) | `ruff check research_institution tests` + math-side `tests/static/test_no_program_named_modules_in_tests.py` + pi_monitor-side `tests/static/test_no_program_identity_in_fixtures.py` | PASS (CI + green-gate) |
 | **V1** | fast local confidence (unit tests) | `pytest -q` | PASS (296+ tests, 2 skipped) |
 | **V-WIRE** | cross-repo composition contracts | `bash $HOME/Documents/andrei/math/scripts/autonomy.sh` (mathlint G7) | PASS / FAIL (operator decision pending on kaplansky work_source_provider) |
+| **V-COMPOSE** | composed-test tier (in-process cross-repo seams) | `python -m pytest tests/test_compose_*.py` (run by the institution gate) | PASS |
 | **V2** | hermetic repository confidence (full suite + green-gate) | `bash green-gate/check-institution.sh --hermetic` | PASS |
-| **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status | PARTIAL |
+| **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status; mutation survival tests | PARTIAL |
 | **V4** | system / release assurance (clean-install, live-mode wiring) | `bash green-gate/check-institution.sh --live` (operator-only) | BLOCKED without operator creds; hermetic variant under `RESEARCH_INSTITUTION_HERMETIC=1` |
 
 ### V0 — repo-boundary static checks (BC-1, BC-4)
@@ -228,10 +229,36 @@ the live-mode code path every commit.
 | FAIL | executed and violated its oracle | gate returns `RED:` |
 | BLOCKED | required evidence unobtainable in this run | live gate when `MATHLINT_MODEL_ROUTE` is unset |
 | NOT_RUN | not executed this invocation | V3 mutation tests (manual only) |
-| NOT_APPLICABLE | deliberately excluded | timezone hints (DTZ) — irrelevant to glue code |
-
-`xfail` representing a known unmet requirement **never counts as
+| NOT_APPLICABLE | deliberately excluded | timezone hints (DTZ) — irrelevant to glue code |`xfail` representing a known unmet requirement **never counts as
 evidence** that the requirement passes.
+
+## V-tier requirements per action
+
+Each common operator action has a minimum V-tier that must
+be GREEN before the action proceeds. The matrix below is
+the operator's contract for "what evidence do I need
+before doing X?"
+
+| Action | Minimum tier | Why |
+|---|---|---|
+| **Open a PR** | GREEN-V1 | The PR diff has ruff clean, unit tests pass, repo-boundary static check is GREEN. |
+| **Merge to main** | GREEN-V2 | The full hermetic suite passes; the institution gate is GREEN. |
+| **Cut a release** | GREEN-V3 | Mutation + property + fuzz targets have been run; no surviving mutants beyond documented allowance. |
+| **Run a live launch** | GREEN-V4 | The operator has credentials; the live-mode gate exercises the real worker. |
+
+Why the difference: V1 catches leaf-module regressions
+(unit tests); V2 catches cross-repo composition regressions
+(the institution gate's v-compose + v-wire + program checks);
+V3 catches adversarial regressions (mutations that survive
+example tests); V4 catches operator-environment regressions
+(credentials, real subprocess).
+
+A regression in any tier fails the gate with the tier's
+name in the verdict; the operator's response depends on
+which tier failed. A V0 failure is a code-style issue; a
+V-WIRE failure is a composition-seam break; a V2 failure
+is a regression in some COMPOSE-N test or program check;
+a V3 failure is a mutation that survived example tests.
 
 ## Adding new code
 
