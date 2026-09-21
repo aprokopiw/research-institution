@@ -128,12 +128,12 @@ class HealthPayloadTests(unittest.TestCase):
 
 class LatestPayloadTests(unittest.TestCase):
     def test_minimal_latest_parses(self) -> None:
-        l = LatestPayload.model_validate({})
-        self.assertEqual(l.observed_unix, 0.0)
+        latest = LatestPayload.model_validate({})
+        self.assertEqual(latest.observed_unix, 0.0)
 
     def test_typed_observed_unix(self) -> None:
-        l = LatestPayload.model_validate({"observed_unix": 1234.5})
-        self.assertEqual(l.observed_unix, 1234.5)
+        latest = LatestPayload.model_validate({"observed_unix": 1234.5})
+        self.assertEqual(latest.observed_unix, 1234.5)
 
 
 class EndToEndTypedParseTests(unittest.TestCase):

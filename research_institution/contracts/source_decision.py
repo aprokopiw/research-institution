@@ -42,7 +42,7 @@ typed envelopes through the wire boundary.
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -119,7 +119,7 @@ WorkspaceName = PM_WorkspaceName
 
 #: The tagged union of the four decision variants. A
 #: ``WorkSourceProvider.__call__`` always returns one of these.
-SourceDecision: TypeAlias = Dispatch | Wait | OperatorRequired | Stop
+type SourceDecision = Dispatch | Wait | OperatorRequired | Stop
 
 #: Back-compat alias for the legacy :data:`ReasonCodeLiteral` name.
 #: Some external importers still reference the old name; prefer
@@ -130,7 +130,7 @@ ReasonCodeLiteral = PM_CanonicalReasonCode
 #: The current canonical type is the :class:`DecisionKind` StrEnum
 #: which carries the wire-string identity as ``.value``; this alias
 #: keeps ``kind: DecisionKindLiteral`` annotations working.
-DecisionKindLiteral: TypeAlias = Literal["dispatch", "wait", "operator_required", "stop"]
+type DecisionKindLiteral = Literal["dispatch", "wait", "operator_required", "stop"]
 
 
 # ---------------------------------------------------------------------------

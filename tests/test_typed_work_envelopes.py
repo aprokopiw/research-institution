@@ -13,7 +13,7 @@ strict shape, not ``dict[str, object]``.
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from pi_monitor.work.work_source import SourceRevision, WorkRequest
 
@@ -37,7 +37,7 @@ def _work_request(**overrides: object) -> WorkRequest:
         "source_identity": "test-source",
         "source_revision": SourceRevision(
             fingerprint="fp-1",
-            observed_unix=datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp(),
+            observed_unix=datetime(2026, 1, 1, tzinfo=UTC).timestamp(),
             label="rev-fp-1",
         ),
         "operation_id": "op-1",

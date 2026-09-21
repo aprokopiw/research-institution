@@ -41,7 +41,7 @@ class SupervisorStatusTypedContractTests(unittest.TestCase):
         runner.queue(
             QueuedResponse(returncode=0, stdout=payload, stderr="")
         )
-        state = probe_supervisor(Path("/tmp/cfg.toml"), runner=runner)
+        state = probe_supervisor(Path("/tmp/cfg.toml"), runner=runner)  # noqa: S108 — literal path is the kwarg value, not a file creation
         assert state.status_payload is not None
         # The typed view is the canonical Pydantic model; the
         # dispatcher reads ``payload.project`` not ``payload["project"]``.
@@ -53,10 +53,9 @@ class SupervisorStatusTypedContractTests(unittest.TestCase):
         # The dispatcher must see the same class identity as pi-monitor;
         # a drift in pi-monitor's wire shape surfaces at the
         # import boundary (pyright flags the re-export change).
-        from pi_monitor.operator.supervisor_status import (
-            SupervisorStatusPayload as PM_SSP,
-        )
-        self.assertIs(SupervisorStatusPayload, PM_SSP)
+        import pi_monitor.operator.supervisor_status as pi_monitor_supervisor
+
+        self.assertIs(SupervisorStatusPayload, pi_monitor_supervisor.SupervisorStatusPayload)
 
     def test_malformed_wire_falls_back_to_clean_state(self) -> None:
         # A wire-format drift (e.g. a supervisor from a future
@@ -68,7 +67,7 @@ class SupervisorStatusTypedContractTests(unittest.TestCase):
         runner.queue(
             QueuedResponse(returncode=0, stdout="this is not json", stderr=""),
         )
-        state = probe_supervisor(Path("/tmp/cfg.toml"), runner=runner)
+        state = probe_supervisor(Path("/tmp/cfg.toml"), runner=runner)  # noqa: S108 — literal path is the kwarg value, not a file creation
         self.assertIsNone(state.status_payload)
         self.assertEqual(state.supervisor_pid, 0)
         self.assertEqual(state.worker_pid, 0)

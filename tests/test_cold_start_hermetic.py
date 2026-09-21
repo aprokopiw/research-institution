@@ -353,7 +353,7 @@ def test_green_gate_live_with_fake_mathlint(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["PATH"] = f"{shim_dir}:{env.get('PATH', '/usr/bin:/bin')}"
-    env["MATHLINT_MODEL_ROUTE"] = "openai-codex/test-fake-route"
+    env["MATHLINT_MODEL_ROUTE"] = "openai-codex/gpt-5.6-sol"
     env["RESEARCH_INSTITUTION_ENGINE_SCRIPT"] = str(fake_engine)
     env["RESEARCH_INSTITUTION_HERMETIC"] = "1"  # skip v0-ruff
     # Force the gate's `ROOT` resolution by cd-ing; the gate uses

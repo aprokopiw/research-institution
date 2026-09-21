@@ -19,7 +19,6 @@ import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -81,7 +80,7 @@ class PreflightCheckStatus(StrEnum):
     silently misclassifying the check.
     """
 
-    PASS = "pass"
+    PASS = "pass"  # noqa: S105 — wire vocabulary, not a password
     FAIL = "fail"
     SKIP = "skip"
 

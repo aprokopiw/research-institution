@@ -54,6 +54,13 @@ def _stage_sandbox(tmp_path: Path) -> Path:
     shutil.copy(BOOTSTRAP_SH, sandbox_root / "scripts" / "bootstrap-institution.sh")
     shutil.copy(BOOTSTRAP_PY, sandbox_root / "scripts" / "bootstrap.py")
     shutil.copy(FIXTURE_EMPTY, sandbox_root / "catalog" / "programs.toml")
+    # The bootstrap entry point imports `research_institution.gates.bootstrap`.
+    # Symlink the package source into the sandbox so the bootstrap shim can
+    # import it without requiring a system-wide install. This mirrors the
+    # isolation pattern in `test_cold_start_hermetic.py`.
+    (sandbox_root / "research_institution").symlink_to(
+        REPO_ROOT / "research_institution", target_is_directory=True
+    )
     return sandbox_root
 
 

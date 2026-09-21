@@ -6,4 +6,5 @@
 set -e
 cd "$(dirname "$0")/.."
 export MATHLINT_INSTITUTION_DIR="${MATHLINT_INSTITUTION_DIR:-$PWD}"
+export PYTHONPATH="${PYTHONPATH:-$PWD}"
 exec python3 scripts/bootstrap.py "$@"

@@ -23,6 +23,12 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+
+#: Outcome vocabulary is owned by pi_monitor's runtime layer (INV-022).
+#: We re-export the relevant constants so the institution's headline
+#: classifier has a single source of truth — no string literals that
+#: happen to equal the canonical value at the wire.
+from pi_monitor.runtime.worker_outcomes import OUTCOME_BLOCKED
 from typing import Any
 
 from .status_types import (
@@ -150,7 +156,7 @@ def _classify(
             return ProgramState.CIRCUIT_OPEN
         if health.degraded:
             return ProgramState.DEGRADED
-        if health.execution.outcome == "blocked":
+        if health.execution.outcome == OUTCOME_BLOCKED:
             return ProgramState.GATE_CLOSED
     observed_unix: float | None = None
     if latest is not None:
