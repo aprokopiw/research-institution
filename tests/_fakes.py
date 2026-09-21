@@ -36,7 +36,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 
 # ---------------------------------------------------------------------------
@@ -463,8 +463,226 @@ class FakeMathResearchProgram:
 
 
 # ---------------------------------------------------------------------------
-# F-2: FakeCatalog — construct a Program directly without writing TOML
+# F-4: FaultInjector — typed exception injection at boundary ports
 # ---------------------------------------------------------------------------
+
+
+class FaultInjector:
+    """Inject a typed exception at a named boundary port.
+
+    Used by COMPOSE tests to drill the recovery paths. The
+    injector attaches to a port name (e.g. ``"work_source"``,
+    ``"audit_chain"``, ``"mathlint_source"``) and a callable
+    that wraps the real port call. On ``inject_once(port, exc)``
+    the next call through the wrapper raises ``exc``; subsequent
+    calls delegate to the real callable.
+
+    ## Usage
+
+        runner = FakeRunner()
+        runner.queue(QueuedResponse(returncode=0, stdout="ok"))
+        injector = FaultInjector()
+        wrapped = injector.wrap_runner(runner)
+
+        # First call: returns "ok"
+        wrapped(("mathlint", "status"))
+        # Second call: raises
+        with pytest.raises(RuntimeError):
+            injector.inject_once("runner", RuntimeError("simulated"))
+            wrapped(("mathlint", "status"))
+
+    The fault scope is per-instance, not global, so parallel
+    tests do not collide. Tests reset the injector between
+    invocations via :meth:`reset`.
+    """
+
+    def __init__(self) -> None:
+        self._armed: dict[str, BaseException] = {}
+
+    def inject_once(self, port: str, exc: BaseException) -> None:
+        """Arm the injector to raise ``exc`` on the next call through ``port``."""
+        self._armed[port] = exc
+
+    def reset(self, port: str | None = None) -> None:
+        """Clear armed faults. ``port=None`` clears every port."""
+        if port is None:
+            self._armed.clear()
+        else:
+            self._armed.pop(port, None)
+
+    def consume(self, port: str) -> BaseException | None:
+        """Return and clear the armed fault for ``port``, or None."""
+        return self._armed.pop(port, None)
+
+    def wrap_runner(self, runner: FakeRunner) -> FakeRunner:
+        """Return a wrapper around ``runner`` that consults ``self`` first.
+
+        The wrapper is a :class:`FakeRunner` subclass; tests that
+        hold a reference to the original see no change. The
+        wrapper's ``__call__`` checks ``self._armed['runner']``
+        before delegating.
+        """
+
+        class _FaultedRunner(FakeRunner):
+            def __init__(self, injector: FaultInjector, inner: FakeRunner) -> None:
+                super().__init__()
+                # Move the inner's queue into the wrapper so the
+                # parent's ``__call__`` sees the queued responses.
+                self._queue.extend(inner._queue)
+                self._injector = injector
+
+            def __call__(self, *args: Any, **kwargs: Any) -> Any:
+                armed = self._injector.consume("runner")
+                if armed is not None:
+                    raise armed
+                return super().__call__(*args, **kwargs)
+
+        return _FaultedRunner(self, runner)
+
+
+# ---------------------------------------------------------------------------
+# F-6: InMemoryAuditChain — minimal chain recorder for research-institution
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEventRecord:
+    """One recorded audit-chain event.
+
+    Mirrors math's :class:`tests.support.audit_chain_double.AuditEvent`
+    shape but kept in research-institution (per the no-shared-fakes
+    rule). Tests that need a chain across both repos use each
+    repo's recorder; the cross-repo invariant is the
+    ``prev_hash == prior.hash`` link, which is identical in both.
+    """
+
+    seq: int
+    name: str
+    payload: dict[str, object]
+    prev_hash: str
+    hash: str
+    emitted_at: float
+
+
+class InMemoryAuditChain:
+    """Append-only, hash-linked, in-memory audit-chain double.
+
+    Same semantics as math's :class:`AuditChainDouble`:
+
+    - genesis ``prev_hash`` is the well-known sentinel ``"GENESIS"``;
+    - every emitted event links ``prev_hash`` to the prior tail;
+    - the chain is order-independent on the wall clock; the
+      ``emitted_at`` field is informational only.
+
+    Tests assert chain-validity via :meth:`assert_chain_valid`;
+    if the linking breaks, the assertion names the broken
+    ``seq`` so the regression is easy to localise.
+    """
+
+    GENESIS_PREV_HASH = "GENESIS"
+
+    def __init__(self) -> None:
+        self.events: list[AuditEventRecord] = []
+        self._counter = 0
+
+    def emit(self, name: str, payload: dict[str, object] | None = None) -> AuditEventRecord:
+        import hashlib
+
+        if not isinstance(name, str) or not name:
+            raise ValueError("audit event name must be a non-empty string")
+        body: dict[str, object] = dict(payload) if payload is not None else {}
+        self._counter += 1
+        prev_hash = self.events[-1].hash if self.events else self.GENESIS_PREV_HASH
+        payload_bytes = repr(sorted(body.items())).encode("utf-8")
+        digest = hashlib.sha256(
+            f"{self._counter}|{name}|{prev_hash}|".encode() + payload_bytes
+        ).hexdigest()
+        event = AuditEventRecord(
+            seq=self._counter,
+            name=name,
+            payload=body,
+            prev_hash=prev_hash,
+            hash=digest,
+            emitted_at=0.0,
+        )
+        self.events.append(event)
+        return event
+
+    def assert_chain_valid(self) -> None:
+        expected_prev = self.GENESIS_PREV_HASH
+        for event in self.events:
+            if event.prev_hash != expected_prev:
+                raise AssertionError(
+                    f"audit-chain break at seq={event.seq}: "
+                    f"prev_hash={event.prev_hash!r} != expected={expected_prev!r}"
+                )
+            expected_prev = event.hash
+
+
+# ---------------------------------------------------------------------------
+# F-7: BoundarySpy — record every call through a port for assertion
+# ---------------------------------------------------------------------------
+
+
+class BoundarySpy:
+    """Wrap a callable to record every call (port-name, args, kwargs, return).
+
+    Used to assert that the OS invokes a port the expected
+    number of times with the expected arguments. The spy is
+    passive (it records; it does not inject), so it composes
+    cleanly with :class:`FaultInjector`.
+
+    ## Usage
+
+        spy = BoundarySpy()
+        runner = FakeRunner()
+        runner.queue(QueuedResponse(returncode=0, stdout="ok"))
+        wrapped = spy.wrap("runner", runner)
+        wrapped(("mathlint", "status"))
+
+        assert spy.call_count("runner") == 1
+        assert spy.calls("runner")[0].args == (("mathlint", "status"),)
+    """
+
+    @dataclass(frozen=True, slots=True)
+    class Call:
+        args: tuple[Any, ...]
+        kwargs: dict[str, Any]
+        result: Any
+
+    def __init__(self) -> None:
+        self._calls: dict[str, list[BoundarySpy.Call]] = {}
+
+    def wrap(self, port: str, fn: Callable[..., Any]) -> Callable[..., Any]:
+        """Return a wrapper around ``fn`` that records every call under ``port``."""
+        calls = self._calls.setdefault(port, [])
+
+        def _wrapped(*args: Any, **kwargs: Any) -> Any:
+            result = fn(*args, **kwargs)
+            calls.append(BoundarySpy.Call(args=args, kwargs=dict(kwargs), result=result))
+            return result
+
+        # Preserve __name__ so debug logs are readable.
+        import contextlib
+        with contextlib.suppress(AttributeError):
+            _wrapped.__name__ = getattr(fn, "__name__", port)  # type: ignore[attr-defined]
+        return _wrapped
+
+    def call_count(self, port: str) -> int:
+        return len(self._calls.get(port, []))
+
+    def calls(self, port: str) -> tuple[BoundarySpy.Call, ...]:
+        return tuple(self._calls.get(port, []))
+
+    def reset(self, port: str | None = None) -> None:
+        if port is None:
+            self._calls.clear()
+        else:
+            self._calls.pop(port, None)
+
+
+# ---------------------------------------------------------------------------
+# F-2: FakeCatalog — construct a Program directly without writing TOML
 
 
 def make_fake_program(
@@ -573,6 +791,8 @@ class ScriptedSource:
 
 
 __all__ = [
+    "AuditEventRecord",
+    "BoundarySpy",
     "Clock",
     "Environment",
     "FakeCall",
@@ -581,6 +801,8 @@ __all__ = [
     "FakeMathResearchProgram",
     "FakeProgramItem",
     "FakeRunner",
+    "FaultInjector",
+    "InMemoryAuditChain",
     "NoActiveWorkError",
     "OsEnviron",
     "QueuedResponse",
