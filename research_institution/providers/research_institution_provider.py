@@ -10,30 +10,35 @@ the ``register()`` function below.
 Contract: ``@CTR-0094`` (work-source-provider dispatch envelope).
 
 Composition with proof programs (per @ADR-0007):
-The OS owns the *work-source slot*. Each proof program owns
-its *content contributions* (theorem view, audit reports,
-obligation labels, etc.). Mathlint's
-``register_program_providers`` is wholesale (the kernel
-replaces the entire ``ProgramProviders`` state on every call),
-so the OS cannot let the program plugin overwrite its slot.
+The OS owns the *work-source slot* AND the *work-selection
+call*. Each proof program owns its *content contributions*
+(theorem view, audit reports, obligation labels, etc.).
 
-To preserve both halves, ``register()`` here:
+The OS never hardcodes a program name in source. Program
+discovery is by two kernel-blessed surfaces:
 
-1. Invokes each installed proof program's ``mathlint_plugin.register()``
-   directly (importing the module by name from the catalog's
-   ``entry_point``). The program's call populates theorem views,
-   audit reports, obligation labels, identifier namespace, etc.
-2. Reads the just-installed ``ProgramProviders`` state.
-3. Re-emits a merged ``ProgramProviders`` whose ``work_source_provider``
-   field carries the OS-level ``select_next_work_for_supervisor``
-   and whose remaining fields are the program's contributions
-   (so the program's slot is preserved alongside ours).
+* ``mathlint.providers`` entry point (already present in
+  math) — each program declares its ``register()`` there;
+  the OS reads each entry-point string from the institution
+  catalog and invokes it via :func:`importlib.import_module`.
+* ``mathlint.program_work_selection`` entry point
+  (``mathlint.program_providers.PROGRAM_WORK_SELECTION_GROUP``,
+  added in @ADR-0007 follow-up) — each program declares its
+  ``next_active_work`` callable there; the OS reads it via
+  :func:`mathlint.program_providers.work_selection_callables`
+  keyed by the entry-point ``name`` (which the OS does not
+  hardcode either — it looks the name up from the catalog
+  entry whose ``local_path`` matches the current repo).
 
-If no proof program is installed in the current environment
-(common on CI runners), the OS still installs
-``work_source_provider``; the supplier zeros (no theorem
-view, no audit reports) are deliberate — the kernel can answer
-the work-decide syscall with a ``Wait`` envelope either way.
+Adding a second research program means adding it to the
+catalog AND declaring both entry points in its ``pyproject.toml``;
+no OS code edit is needed.
+
+The legacy ``_DEFAULT_PROGRAM_ENTRY_POINTS = ("kaplansky.mathlint_plugin:register",)``
+fallback has been removed (was @ADR-0007 violation): if the
+catalog is unreadable, the OS emits a clear diagnostic and
+operates without program content rather than silently
+fabricating a kaplansky entry.
 """
 
 from __future__ import annotations
@@ -42,7 +47,7 @@ import dataclasses
 import importlib
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -77,24 +82,79 @@ __all__ = [
 _LOG = logging.getLogger(__name__)
 
 
-# Proof programs that contribute content alongside the OS-owned
-# work-source slot. Each entry is the catalog's ``entry_point``
-# value (e.g. ``"kaplansky.mathlint_plugin:register"``). The OS
-# discovers programs by reading the institution catalog and only
-# composes with those marked ``live_credentials_required = true``
-# (or any program that exports a ``mathlint_plugin`` module).
-#
-# Adding a second research program means adding its name to
-# ``catalog/programs.toml``; no code edit here is needed.
-_DEFAULT_PROGRAM_ENTRY_POINTS: tuple[str, ...] = (
-    "kaplansky.mathlint_plugin:register",
-)
+# ---------------------------------------------------------------------------
+# Program discovery: every call goes through the institution catalog +
+# kernel-blessed entry-point groups. The OS never names a program in
+# source. To add a second program, edit ``catalog/programs.toml`` and
+# declare both entry points in the program's ``pyproject.toml``.
+# ---------------------------------------------------------------------------
 
 
-# Reason code vocabulary is pinned by REASON_WAIT_REQUESTED
-# (imported from research_institution.contracts.source_decision).
-# The closed set lives in the contracts module so every call site
-# shares one source of truth.
+def _entry_points_from_catalog() -> tuple[tuple[str, str], ...] | None:
+    """Return ``((catalog_name, entry_point), ...)`` from the catalog.
+
+    Returns ``None`` when the catalog cannot be read (the normal
+    state for math-only venvs and CI runners); the caller decides
+    whether to fall back, warn, or raise. Never hardcodes a
+    program name — the catalog is the OS's single source of truth
+    for "what programs exist".
+    """
+    try:
+        # Import lazily so import-time errors don't poison the
+        # entry-point discovery path.
+        from research_institution.catalog import load_catalog
+        from research_institution.paths import catalog_path
+
+        programs = load_catalog(catalog_path())
+    except (OSError, ValueError, ImportError, RuntimeError):
+        # RuntimeError covers "MATHLINT_INSTITUTION_DIR not set"
+        # which is the expected state for hermetic tests and
+        # math-only venvs.
+        return None
+    return tuple((p.name, p.entry_point) for p in programs)
+
+
+def _work_selection_callable_for_repo(
+    repository: Path,
+) -> Callable[..., object] | None:
+    """Resolve the program-supplied ``next_active_work`` callable for ``repository``.
+
+    Resolution order:
+
+    1. Identify the catalog program whose ``local_path`` matches
+       the repository (or whose ``program_markers`` match; see
+       :func:`_read_catalog_program_name`). The OS reads the
+       catalog; it does not name the program.
+    2. Ensure the per-program work-selection registry has been
+       populated. ``mathlint.cli`` calls
+       ``discover_work_selection_programs()`` at import time;
+       the OS also calls it eagerly in :func:`register`. The
+       defensive call here keeps the OS safe when neither path
+       has fired (e.g. a test calls this function directly).
+    3. Look up the entry-point-loaded callable under the program
+       name in ``mathlint.program_providers.work_selection_callables()``.
+
+    Returns ``None`` when no catalog match exists OR no entry
+    point is registered for the program name. The OS treats
+    both cases the same way: emit a Wait with the canonical
+    "no roadmap" reason, never crash.
+
+    The kernel never inspects the callable's return type; the
+    OS interprets the program-typed work items per
+    ``@CTR-0094``.
+    """
+    program_name = _read_catalog_program_name(repository)
+    if not program_name:
+        return None
+    try:
+        from mathlint.program_providers import (
+            discover_work_selection_programs as _discover_ws,
+        )
+        from mathlint.program_providers import work_selection_callables
+    except ImportError:
+        return None
+    _discover_ws()
+    return work_selection_callables().get(program_name)
 
 
 def _read_revision(repo: Path) -> tuple[str, float]:
@@ -124,13 +184,25 @@ def _read_revision(repo: Path) -> tuple[str, float]:
 
 
 def _read_catalog_program_name(repo: Path) -> str | None:
-    """Best-effort: name the catalog program whose local_path matches `repo`.
+    """Best-effort: name the catalog program whose ``local_path`` matches ``repo``.
 
-    The OS already owns the catalog (@ADR-0006); using it here
-    avoids hardcoding a program name in mathlint's surface.
-    Returns None when no catalog entry matches OR when the
-    institution directory isn't configured (which is the normal
-    state for a math-only venv or a CI runner).
+    Resolution is catalog-driven and runs in two passes (both
+    catalog-sourced; the OS does NOT hardcode any program name
+    in source):
+
+    1. **Primary** — match by ``local_path``: the operator's
+       declared on-disk location for the program.
+    2. **Secondary** — match by ``program_markers``: when
+       ``local_path`` does not match (tests, fresh checkouts,
+       ops mirrors), the OS still resolves the program name as
+       long as any catalog-declared marker exists under
+       ``repo``. This is what makes the OS work with a test
+       that synthesises a temp repo and writes the program's
+       canonical roadmap there.
+
+    Returns ``None`` when no catalog entry matches OR when the
+    institution directory isn't configured (the normal state
+    for a math-only venv or a CI runner).
     """
     try:
         # Import lazily so import-time errors don't poison the
@@ -140,10 +212,9 @@ def _read_catalog_program_name(repo: Path) -> str | None:
 
         programs = load_catalog(catalog_path())
     except (OSError, ValueError, ImportError, RuntimeError):
-        # RuntimeError covers "MATHLINT_INSTITUTION_DIR not set"
-        # which is the expected state for hermetic tests.
         return None
     repo_str = str(repo).rstrip("/")
+    # Primary: local_path match.
     for program in programs:
         try:
             resolved = str(program.resolved_local_path).rstrip("/")
@@ -151,6 +222,12 @@ def _read_catalog_program_name(repo: Path) -> str | None:
             continue
         if resolved == repo_str:
             return program.name
+    # Secondary: marker-file match (catalog-driven).
+    for program in programs:
+        markers = getattr(program, "program_markers", None) or []
+        for marker in markers:
+            if (repo / marker).is_file():
+                return program.name
     return None
 
 
@@ -160,23 +237,32 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
     Contract: @CTR-0094. The OS owns the *transport* (typed
     ``Dispatch`` / ``Wait`` envelope, serialisation, retry/wake
     policy); the *decision* of what to work on next is owned by the
-    proof program (currently kaplansky via ``work_selection.next_active_work``).
+    proof program (resolved through the kernel-blessed
+    ``mathlint.program_work_selection`` entry-point group, keyed
+    by the catalog program name — never by hardcoded import).
 
     Composition:
 
       1. The OS reads the source revision (git HEAD fingerprint, or
          the roadmap's content fingerprint when not a git checkout).
-      2. The OS calls ``kaplansky.work_selection.next_active_work`` to
-         ask kaplansky: "what should mathlint work on next?". The
-         program owns the answer; the OS does NOT inspect the
-         roadmap TOML itself.
-      3. If kaplansky returns one or more WorkRequests, the OS wraps
-         them in a typed :class:`Dispatch` with the canonical
+      2. The OS identifies the catalog program whose ``local_path``
+         matches the repo (so the OS does NOT name the program in
+         source). It then looks up that program's work-selection
+         callable via the entry-point registry.
+      3. The OS calls that callable, asking the program "what should
+         mathlint work on next?". The program owns the answer; the
+         OS does NOT inspect the roadmap TOML itself.
+      4. If the program returns one or more WorkRequests, the OS
+         wraps them in a typed :class:`Dispatch` with the canonical
          ``reason_code="work_available"``.
-      4. If kaplansky has no active work
+      5. If the program has no active work
          (``NoActiveWorkError``), the OS emits a :class:`Wait` with
          ``wake_on_source_change=True`` so the supervisor re-decides
          as soon as the program moves an item to ``active``.
+      6. If the program is not catalog-registered for this repo
+         OR has no entry-point-registered work-selection callable,
+         the OS emits a Wait with a clear diagnostic naming only
+         the *catalog key* (not the program python module).
 
     The return type is the typed dispatch envelope's discriminated
     union (``Dispatch | Wait``); pyright enforces the required field
@@ -198,9 +284,24 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
         observed_unix=observed,
         label=label,
     )
+    callable_obj = _work_selection_callable_for_repo(repository)
+    if callable_obj is None:
+        return Wait(
+            source_revision=source_revision,
+            decided_unix=observed,
+            reason_code=REASON_WAIT_REQUESTED,
+            reason=(
+                f"no work-selection callable registered for catalog "
+                f"program {program_name!r}; install the program package "
+                f"and ensure it declares "
+                f"mathlint.program_work_selection entry point"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=30.0,
+        )
     try:
-        work = _ask_program_for_work(repository, source_revision)
-    except _ProgramRoadmapNotFound:
+        work = _ask_program_for_work(callable_obj, repository, source_revision)
+    except _ProgramRoadmapNotFoundError:
         return Wait(
             source_revision=source_revision,
             decided_unix=observed,
@@ -212,7 +313,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
             wake_on_source_change=True,
             retry_after_seconds=30.0,
         )
-    except _ProgramNoActiveWork as exc:
+    except _ProgramNoActiveWorkError as exc:
         return Wait(
             source_revision=source_revision,
             decided_unix=observed,
@@ -250,47 +351,79 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
 # ---------------------------------------------------------------------------
 
 
-class _ProgramRoadmapNotFound(LookupError):
+class _ProgramRoadmapNotFoundError(LookupError):
     """Proof program's roadmap file is missing — caller emits Wait."""
 
 
-class _ProgramNoActiveWork(LookupError):
+class _ProgramNoActiveWorkError(LookupError):
     """Proof program has zero active items with next_action."""
 
 
 def _ask_program_for_work(
+    callable_obj: Callable[..., object],
     repository: Path,
     source_revision: SourceRevision,
 ) -> list[WorkRequest]:
-    """Delegate to the registered proof program's next-step selector.
+    """Delegate to the program-supplied ``next_active_work`` callable.
 
-    The composition is by catalog: the catalog declares one
-    ``entry_point`` per proof program; that module's ``register()``
-    populates ``ProgramProviders``; the OS then calls this helper
-    which looks up the program-supplied ``next_active_work``
-    function via a registry. Today the registry has exactly one
-    entry (``kaplansky.work_selection.next_active_work``); adding a
-    second program means adding a registry entry, no OS code
-    change.
+    The callable is resolved through the kernel-blessed
+    ``mathlint.program_work_selection`` entry-point group
+    (see :func:`_work_selection_callable_for_repo`); the OS
+    does not import any program-named module by hand.
+
+    Exception family is the proof program's own (re-exported
+    by ``kaplansky.work_selection`` today, by future programs
+    tomorrow); the OS catches the duck-typed exceptions
+    ``RoadmapNotFoundError``, ``NoActiveWorkError``, and
+    ``RoadmapParseError`` by attribute lookup on the callable's
+    module rather than by direct module import. That keeps
+    the OS program-agnostic: a second program with the same
+    exception family works without OS code changes.
     """
+    callable_module = getattr(callable_obj, "__module__", "")
     try:
-        import kaplansky.work_selection as kaplansky_ws
+        exc_module = importlib.import_module(callable_module)
     except ImportError:
-        raise _ProgramRoadmapNotFound(
-            f"kaplansky is not installed in this environment; "
-            f"cannot determine active work for {repository}"
-        ) from None
+        exc_module = None
+    roadmap_not_found = getattr(exc_module, "RoadmapNotFoundError", None)
+    no_active_work = getattr(exc_module, "NoActiveWorkError", None)
+    roadmap_parse = getattr(exc_module, "RoadmapParseError", None)
+
     try:
-        return kaplansky_ws.next_active_work(repository, source_revision=source_revision)
-    except kaplansky_ws.RoadmapNotFoundError as exc:
-        raise _ProgramRoadmapNotFound(str(exc)) from exc
-    except kaplansky_ws.NoActiveWorkError as exc:
-        raise _ProgramNoActiveWork(str(exc)) from exc
-    except kaplansky_ws.RoadmapParseError:
-        # Re-raise: a malformed roadmap is a config defect, not a
-        # "no work" signal. The supervisor should see the crash
-        # rather than silently parking.
+        result = callable_obj(repository, source_revision=source_revision)
+    except Exception as exc:  # noqa: BLE001 — boundary catch
+        if roadmap_not_found is not None and isinstance(exc, roadmap_not_found):
+            raise _ProgramRoadmapNotFoundError(str(exc)) from exc
+        if no_active_work is not None and isinstance(exc, no_active_work):
+            raise _ProgramNoActiveWorkError(str(exc)) from exc
+        if roadmap_parse is not None and isinstance(exc, roadmap_parse):
+            # Re-raise: a malformed roadmap is a config defect,
+            # not a "no work" signal. The supervisor should see
+            # the crash rather than silently parking.
+            raise
+        # Unknown exception family from the program: surface the
+        # diagnostic so the supervisor's catch-all can record it,
+        # but do not crash the OS.
         raise
+
+    # Normalise: the contract says the callable returns a list of
+    # WorkRequest, but the OS does not trust the type at the
+    # dispatch boundary — the contracts module re-exports the
+    # canonical WorkRequest class so isinstance works.
+    from research_institution.contracts.source_decision import (
+        WorkRequest as _WR,  # noqa: N814
+    )
+
+    if not isinstance(result, list):
+        raise _ProgramRoadmapNotFoundError(
+            f"work-selection callable returned non-list: {type(result).__name__}"
+        )
+    for item in result:
+        if not isinstance(item, _WR):
+            raise _ProgramRoadmapNotFoundError(
+                f"work-selection callable returned non-WorkRequest item: {type(item).__name__}"
+            )
+    return result
 
 
 def _call_program_register(entry_point: str) -> None:
@@ -348,22 +481,20 @@ def _call_program_register(entry_point: str) -> None:
 def _program_entry_points() -> Iterable[str]:
     """Yield every proof program's ``register()`` entry-point string.
 
-    Reads the institution catalog when present; falls back to
-    the built-in default (``kaplansky``) so a math-only venv
-    still composes with kaplansky when both are installed.
+    Reads the institution catalog exclusively. If the catalog
+    cannot be read, returns an empty tuple — the OS does NOT
+    fall back to a hardcoded program name (that was an
+    @ADR-0007 violation; the catalog is the OS's only source
+    of truth for "what programs exist").
 
     Each entry is the ``entry_point`` declared in
     ``catalog/programs.toml`` (e.g.
     ``"kaplansky.mathlint_plugin:register"``).
     """
-    try:
-        from research_institution.catalog import load_catalog
-        from research_institution.paths import catalog_path
-
-        programs = load_catalog(catalog_path())
-    except (OSError, ValueError, ImportError, RuntimeError):
-        return tuple(_DEFAULT_PROGRAM_ENTRY_POINTS)
-    return tuple(p.entry_point for p in programs)
+    pairs = _entry_points_from_catalog()
+    if pairs is None:
+        return ()
+    return tuple(ep for _, ep in pairs)
 
 
 def _merge_work_source(
@@ -423,18 +554,39 @@ def register() -> None:
 
     Compose order (per @ADR-0007):
 
-    1. Each installed proof program's ``register()`` runs first,
+    1. The kernel's ``discover_work_selection_programs()`` runs
+       first, populating the per-program work-selection callable
+       registry from the ``mathlint.program_work_selection``
+       entry-point group. The OS depends on this registry to
+       resolve ``next_active_work`` for the supervised program.
+       (This is also called from ``mathlint.cli`` at import
+       time; the explicit call here keeps the OS safe when the
+       mathlint CLI has not been imported first.)
+    2. Each installed proof program's ``register()`` runs next,
        populating content contributions (theorem view, audit
-       reports, obligation labels, identifier namespace).
-    2. The OS reads the merged state via ``program_providers()``
+       reports, obligation labels, identifier namespace). The
+       set of programs comes from the institution catalog; the
+       OS does NOT hardcode program names in source.
+    3. The OS reads the merged state via ``program_providers()``
        and re-emits it with the OS-owned ``work_source_provider``
        attached, so neither side clobbers the other.
-    3. Idempotency: re-calling ``register()`` re-installs the
+    4. Idempotency: re-calling ``register()`` re-installs the
        work-source callable (which is fresh per call so test
        monkeypatches do not leak); content contributions are
        re-populated by each program's ``register()`` and are
        idempotent at the kernel level.
     """
+    # Step 1: discover per-program work-selection callables.
+    # Import lazily so the entry-point discovery path is not
+    # poisoned by an ImportError in a test environment.
+    try:
+        from mathlint.program_providers import (
+            discover_work_selection_programs as _discover_ws,
+        )
+    except ImportError:
+        _discover_ws = None
+    if _discover_ws is not None:
+        _discover_ws()
     composed = _compose_programs()
     provider: WorkSourceProvider = select_next_work_for_supervisor
     final = _merge_work_source(composed, provider)
