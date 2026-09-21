@@ -171,34 +171,50 @@ class GateVerdict:
 def check_gate(
     prog: Program, mathlint_bin: str = "mathlint", cwd: Path | None = None
 ) -> GateVerdict:
-    """Read `mathlint roadmap` and return the architecture-review gate verdict.
+    """Probe the program-supplied work-selection callable and return
+    the architecture-review gate verdict.
 
-    Runs `mathlint roadmap` in the program's resolved_local_path.
-    Returns a :class:`GateVerdict` with `status=CLOSED` when the gate
-    is closed (TASK KIND=ARCHITECTURE_REVIEW_REQUIRED); `status=OPEN`
-    otherwise. Returns `status=UNKNOWN` with reason naming the exit
-    code if mathlint fails to run.
+    The architecture-review gate is owned by the OS layer; it
+    probes the program-supplied ``next_active_work`` callable
+    through the kernel-blessed ``mathlint.program_work_selection``
+    entry-point registry. It does NOT invoke ``mathlint roadmap``
+    as a subprocess against the program repo: that would invert
+    the kernel/OS/program layering (per @ADR-0014). ``mathlint
+    roadmap`` is math's *internal* project tool; using it to
+    decide whether to launch a *program* is a category error.
 
-    Raises `FileNotFoundError` if mathlint is not on PATH (operator's
-    env is broken; the dispatcher CLI surfaces this as exit 127).
+    Returns a :class:`GateVerdict` with `status=OPEN` when the
+    program has active work; `status=CLOSED` when the program
+    has no active work or its roadmap is missing; `status=UNKNOWN`
+    with a diagnostic when the registry lookup fails.
+
+    The legacy ``mathlint_bin`` argument is accepted but unused;
+    it pins the previous subprocess-API contract so callers do
+    not need to update.
+
+    Raises :class:`FileNotFoundError` only if the kernel module
+    (``mathlint``) is not importable — the operator's env is
+    broken; the CLI surfaces this as exit 127.
     """
-    workdir = cwd or prog.resolved_local_path
-    completed = subprocess.run(
-        [mathlint_bin, "roadmap"],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        cwd=str(workdir),
-        check=False,
-    )
-    if completed.returncode != 0:
-        return GateVerdict(
-            task_kind="(roadmap-failed)",
-            status=GateVerdictStatus.UNKNOWN,
-            reason=f"mathlint roadmap exited {completed.returncode}",
-            raw_excerpt=(completed.stderr or completed.stdout or "")[-400:],
+    # Delegate to the in-process dispatcher so the CLI surface and
+    # the programmatic surface share one probe implementation.
+    #
+    # The CLI subprocess starts cold — the kernel registry must be
+    # populated from entry points before the dispatcher reads it.
+    # Production callers (``research-institution``) trigger
+    # ``discover_work_selection_programs`` at module import time
+    # (``mathlint.cli``); the CLI is a fresh process so we run it
+    # here defensively.
+    try:
+        from mathlint.program_providers import (
+            discover_work_selection_programs as _discover_ws,
         )
-    return GateVerdict.from_text(completed.stdout or "")
+        _discover_ws()
+    except ImportError:
+        pass
+    from research_institution.dispatcher import Dispatcher
+
+    return Dispatcher().read_gate(prog, mathlint_bin=mathlint_bin, cwd=cwd)
 
 
 # Exit code for `research start` when the gate is closed.

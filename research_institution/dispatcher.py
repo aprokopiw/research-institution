@@ -43,6 +43,7 @@ which carries the typed outcome + raw stdout/stderr for diagnostics.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import subprocess
@@ -211,7 +212,7 @@ class Dispatcher:
     policy: SubprocessPolicy = field(default=DEFAULT_POLICY)
 
     # -----------------------------------------------------------------------
-    # mathlint roadmap -> GateVerdict
+    # program-supplied work-selection probe -> GateVerdict
     # -----------------------------------------------------------------------
     def read_gate(
         self,
@@ -220,32 +221,150 @@ class Dispatcher:
         cwd: Path | None = None,
         timeout_seconds: float | None = None,
     ) -> GateVerdict:
-        """Read `mathlint roadmap` and return the architecture-review gate verdict.
+        """Probe the program-supplied work-selection callable and
+        return the architecture-review gate verdict.
 
-        Wire contract (mathlint roadmap):
-          - argv: [mathlint, "roadmap"]
-          - cwd: program's resolved_local_path (or override)
-          - exit 0 + stdout contains `TASK KIND: <value>` -> parsed
-          - exit 0 + no TASK KIND line -> status=OPEN, task_kind="(absent)"
-          - exit != 0 -> status=UNKNOWN, task_kind="(roadmap-failed)"
+        Wire contract (program-supplied ``next_active_work``):
 
-        Raises FileNotFoundError if mathlint is not on PATH (the
-        subprocess.run raises it natively; we don't catch).
+          - the OS layer (``research-institution``) discovers the
+            program's callable through the kernel-blessed
+            ``mathlint.program_work_selection`` entry-point group
+            (see :mod:`mathlint.program_providers`). The OS does
+            NOT call ``mathlint roadmap`` as a subprocess: that
+            is mathlint's *internal* project tool, and invoking
+            it against a program repo would invert the
+            kernel/OS/program layering (per @ADR-0014).
+          - the callable returns a typed dispatch envelope
+            (:class:`Dispatch` / :class:`Wait`). The dispatcher
+            converts that envelope into a
+            :class:`GateVerdict`:
+              * ``Dispatch`` with non-empty ``work``  ->
+                status=OPEN, ``task_kind=<operation_id>``.
+              * ``Wait`` with ``reason_code=no_eligible_work``
+                -> status=CLOSED, ``task_kind=(no-active-work)``.
+              * ``Wait`` with ``reason_code=wait_requested`` (no
+                roadmap reader) -> status=CLOSED,
+                ``task_kind=(roadmap-missing)``.
+              * no callable registered for the program ->
+                status=UNKNOWN, ``task_kind=(no-work-selection-callable)``.
+
+        The legacy ``mathlint_bin`` + ``cwd`` + ``timeout_seconds``
+        keyword arguments are accepted but ignored (they were the
+        shape of the previous subprocess-based implementation).
+        Callers that previously passed them continue to compile;
+        the new path needs only ``prog``.
         """
-        workdir = cwd or prog.resolved_local_path
-        result = self._run_subprocess(
-            argv=[mathlint_bin, "roadmap"],
-            cwd=workdir,
-            timeout_seconds=timeout_seconds or self.policy.default_timeout_seconds,
-        )
-        if result.returncode != 0:
+        # Imports are deferred to keep the dispatcher module
+        # import-cheap; the OS-level provider is loaded on demand.
+        #
+        # NOTE: we do NOT call ``discover_work_selection_programs``
+        # here — the caller (``research-institution``'s CLI + green
+        # gate) is responsible for ensuring the registry is
+        # populated. Re-discovering inside ``read_gate`` would clobber
+        # test-injected fakes (test seam).
+        try:
+            from mathlint.program_providers import work_selection_callables
+        except ImportError as exc:
             return GateVerdict(
                 task_kind=TASK_KIND_ROADMAP_FAILED,
                 status=GateVerdictStatus.UNKNOWN,
-                reason=f"mathlint roadmap exited {result.returncode}",
-                raw_excerpt=(result.stderr or result.stdout)[-400:],
+                reason=f"mathlint.program_providers not importable: {exc}",
             )
-        return GateVerdict.from_text(result.stdout)
+        callables_map = work_selection_callables()
+        callable_obj = callables_map.get(prog.name)
+        if callable_obj is None:
+            return GateVerdict(
+                task_kind="(no-work-selection-callable)",
+                status=GateVerdictStatus.UNKNOWN,
+                reason=(
+                    f"catalog program {prog.name!r} has no callable "
+                    f"registered under mathlint.program_work_selection; "
+                    f"registered: {sorted(callables_map)}"
+                ),
+            )
+        # Construct a fresh source_revision for the probe so the
+        # gate verdict is independent of any cached supervisor state.
+        from datetime import UTC, datetime
+
+        from pi_monitor.work.work_source import SourceRevision
+
+        observed = datetime.now(tz=UTC).timestamp()
+        source_revision = SourceRevision(
+            fingerprint="0" * 40,
+            observed_unix=observed,
+            label=f"gate-probe-{prog.name}",
+        )
+        try:
+            workdir = cwd if cwd is not None else prog.resolved_local_path
+            result = callable_obj(workdir, source_revision=source_revision)
+        except Exception as exc:  # noqa: BLE001 — probe boundary
+            # Translate known program exception families into gate
+            # verdicts. The OS learns the program's exception
+            # classes by inspecting the entry-point-loaded callable's
+            # module; matching by ``isinstance`` is precise and
+            # survives class-name drift across programs.
+            #
+            # Contract: each program that registers a work-selection
+            # callable MUST expose ``RoadmapNotFoundError`` and
+            # ``NoActiveWorkError`` exception classes on the same
+            # module that exports the callable (per the kernel-
+            # blessed entry-point convention). The OS does NOT
+            # name any program in source; the exception classes are
+            # resolved at runtime through the entry-point module.
+            callable_module_name = getattr(callable_obj, "__module__", "")
+            exc_module = None
+            if callable_module_name:
+                try:
+                    exc_module = importlib.import_module(callable_module_name)
+                except ImportError:
+                    exc_module = None
+            roadmap_not_found_cls = getattr(exc_module, "RoadmapNotFoundError", None)
+            no_active_work_cls = getattr(exc_module, "NoActiveWorkError", None)
+            if roadmap_not_found_cls is not None and isinstance(exc, roadmap_not_found_cls):
+                return GateVerdict(
+                    task_kind="(roadmap-missing)",
+                    status=GateVerdictStatus.CLOSED,
+                    reason=str(exc),
+                )
+            if no_active_work_cls is not None and isinstance(exc, no_active_work_cls):
+                return GateVerdict(
+                    task_kind="(no-active-work)",
+                    status=GateVerdictStatus.CLOSED,
+                    reason=str(exc),
+                )
+            exc_name = type(exc).__name__
+            return GateVerdict(
+                task_kind=TASK_KIND_ROADMAP_FAILED,
+                status=GateVerdictStatus.UNKNOWN,
+                reason=f"work-selection callable raised {exc_name}: {exc}",
+            )
+        # Normalise the probe result into a GateVerdict.
+        # The callable returns a list[WorkRequest] (contract
+        # pinned by the program-supplied module). Empty list ->
+        # closed. Non-empty -> open with the first operation_id.
+        from pi_monitor.work.work_source import WorkRequest
+
+        if isinstance(result, list):
+            if not result:
+                return GateVerdict(
+                    task_kind="(no-active-work)",
+                    status=GateVerdictStatus.CLOSED,
+                    reason="program returned an empty work list",
+                )
+            first: WorkRequest = result[0]
+            return GateVerdict(
+                task_kind=first.operation_id,
+                status=GateVerdictStatus.OPEN,
+                reason=f"program has active work: {first.operation_id}",
+            )
+        return GateVerdict(
+            task_kind=TASK_KIND_ROADMAP_FAILED,
+            status=GateVerdictStatus.UNKNOWN,
+            reason=(
+                f"work-selection callable returned unexpected type "
+                f"{type(result).__name__}; expected list[WorkRequest]"
+            ),
+        )
 
     # -----------------------------------------------------------------------
     # mathlint live-run
