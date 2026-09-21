@@ -1185,15 +1185,15 @@ directives in each repo's `AGENTS.md`:
 
 ## 14. Status
 
-- [ ] Track 1, Phase A — math tests cleanup
-- [ ] Track 1, Phase B — math scripts cleanup
-- [ ] Track 1, Phase C — pi_monitor tests cleanup
-- [ ] Track 1, Phase D — enforcement + verification
-- [ ] Track 2, Phase E — substrate
-- [ ] Track 2, Phase F — single-machine suites
-- [ ] Track 2, Phase G — composed suites
-- [ ] Track 2, Phase H — invariants
-- [ ] Track 2, Phase I — adversarial
-- [ ] Track 2, Phase J — gate integration
+- [x] Track 1, Phase A — math tests cleanup
+- [x] Track 1, Phase B — math scripts cleanup
+- [x] Track 1, Phase C — pi_monitor tests cleanup
+- [x] Track 1, Phase D — enforcement + verification
+- [x] Track 2, Phase E — substrate
+- [x] Track 2, Phase F — single-machine suites
+- [x] Track 2, Phase G — composed suites
+- [x] Track 2, Phase H — invariants
+- [x] Track 2, Phase I — adversarial
+- [x] Track 2, Phase J — gate integration
 
-Last updated: 2026-09-20 (post-refactor).
+Last updated: 2026-09-21 (Track 2 complete).
