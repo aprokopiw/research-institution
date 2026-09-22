@@ -556,6 +556,7 @@ This check is the durable enforcement of `@ADR-0092` going forward. After commit
 - [x] Commit 5a — pi_monitor ExecutionReportWireModel absorbs `recorded_unix` (`504ad51`)
 - [x] Commit 5b — kaplansky readers delegate to canonical wire model; legacy `ts` field preserved via `LegacyCompatibleReport` wrapper (`6630b3f`)
 - [~] Commit 5c — math `_deprecated_launcher/reports.py` cleanup: NOT DONE. The deprecated namespace is scheduled for retirement as a unit; its only consumer is the deprecated `activity.py` (which is itself only consumed by other deprecated modules). Out of scope per `@INV-0086`.
+- [x] Commit 6 — math/src/ drops the two TYPE_CHECKING-only imports of `research_institution.*`; `SourceDecision` is now imported from `pi_monitor.work.work_source` (the canonical wire owner). `configured_provider`'s dishonest `-> SourceDecision` annotation fixed to `-> dict[str, object]` (matches the actual return). (`a207044`)
 - [x] Institution gate GREEN via canonical recipe (`RESEARCH_INSTITUTION_VWIRE_DIRECT=1 bash scripts/verify-institution.sh`): all 7 tiers pass
 - [ ] Live launch succeeds (operator-driven; not part of this plan's automated verification)
 
@@ -563,7 +564,7 @@ This check is the durable enforcement of `@ADR-0092` going forward. After commit
 
 - **Section 5.1 / Section 6 commit 4** listed kaplansky's `launcher/execution_report.py` and `launcher/reports.py` as duplicates of pi_monitor's `ExecutionReportWireModel`. RESOLVED via commit 5a/5b: the canonical wire model absorbed `recorded_unix`; kaplansky's readers now delegate to it via the math facade. The legacy `ts` field (older supervisor version) is preserved by a thin `LegacyCompatibleReport` wrapper that adds only the `ts` fallback on top of the canonical model.
 - The deprecated math `_deprecated_launcher/reports.py` is NOT DONE: the deprecated namespace retirement is tracked separately per `@INV-0086`. The namespace is already isolated (only consumed by other deprecated modules); retiring it requires the broader deprecated-namespace cleanup.
-- **Section 2 import-rule grep** found two `TYPE_CHECKING`-only imports of `research_institution.contracts.source_decision.SourceDecision` in math (`mathlint.program_providers:45`, `mathlint.orchestration.real_source:43`). These are documented exceptions (the type comment explicitly notes @ADR-0014 compliance): pyright sees the type, runtime does not load RI. They are pre-existing (commits `266035b`, `a15b01d`); not touched in this audit. A future cleanup could remove the static coupling by moving `SourceDecision` to `mathlint.types` (math-owned) so the dispatch envelope type is owned by the kernel that uses it.
+- **Section 2 import-rule grep** found two `TYPE_CHECKING`-only imports of `research_institution.contracts.source_decision.SourceDecision` in math (`mathlint.program_providers:45`, `mathlint.orchestration.real_source:43`). RESOLVED in commit `a207044`: the imports were replaced with direct runtime imports of `pi_monitor.work.work_source.SourceDecision` (pi_monitor already exposes the same union type, so no semantic change). In `real_source.py`, the `configured_provider` annotation was also fixed: it claimed `-> SourceDecision` but the body returned a `dict[str, object]` after `decision_to_dict(decision)`. The annotation now reads `-> dict[str, object]`, the `cast(...)` wrapper and `# type: ignore` comment are dropped. After this commit, math/src/ has zero imports of `research_institution.*` (runtime or static).
 
 ## 11. End state
 
@@ -581,6 +582,6 @@ After commits 1–5 + BC-5, the cross-repo wire-canonicalization audit is comple
 | BC-5 (pi_monitor src/) | Not scanned | New static check; wired into institution gate alongside BC-4 |
 | AGENTS.md exempt-file documentation | Implicit grandfather | Explicit carve-out for `tests/mathlint_fixture/`, `tests/static/`, and BC-5's no-grandfather policy for `src/` |
 | Deprecated math `_deprecated_launcher/reports.py` | Reads on-disk JSONL shape | Not deleted; deprecated namespace retirement is tracked separately per `@INV-0086` |
-| Cross-repo TYPE_CHECKING exceptions (math → RI) | 2 hits (pre-existing) | Documented in audit §10; out of scope |
+| Cross-repo TYPE_CHECKING exceptions (math → RI) | 2 hits (pre-existing) | RESOLVED (commit `a207044`); math now imports `SourceDecision` from pi_monitor (the canonical wire owner) instead of RI (the OS layer). |
 
 Institution gate: GREEN (all 7 tiers pass via canonical recipe).
