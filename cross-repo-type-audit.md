@@ -551,14 +551,36 @@ This check is the durable enforcement of `@ADR-0092` going forward. After commit
 - [x] Commit 3 — RI duplicate wire class deletion + canonical vocabularies (`09ccc7d`)
 - [x] Commit 4a — math adds `mathlint.protocol.wire_types` facade + facade-contract test (`abfdc95`)
 - [x] Commit 4b — kaplansky imports via math re-export; execution_report.py / reports.py retained (`b56d2f2`)
-- [ ] BC-5 — pi_monitor src/ static check for program-identity literals (proposed; not committed)
-- [~] (Optional) Commit 5 — math `_deprecated_launcher/reports.py` cleanup: NOT DONE. The deprecated namespace is scheduled for retirement as a unit; this file models the same on-disk JSONL shape as kaplansky's `launcher/reports.py` (both read `recorded_unix`, which the canonical `ExecutionReportWireModel` does not have). A follow-up commit should extend the canonical model to include `recorded_unix` so both readers can be deleted.
+- [x] BC-5 — pi_monitor src/ static check for program-identity literals (commits `94e1576` + `1de8a6f`)
+- [x] AGENTS.md carve-out documentation (commit `5ad6bba`)
+- [x] Commit 5a — pi_monitor ExecutionReportWireModel absorbs `recorded_unix` (`504ad51`)
+- [x] Commit 5b — kaplansky readers delegate to canonical wire model; legacy `ts` field preserved via `LegacyCompatibleReport` wrapper (`6630b3f`)
+- [~] Commit 5c — math `_deprecated_launcher/reports.py` cleanup: NOT DONE. The deprecated namespace is scheduled for retirement as a unit; its only consumer is the deprecated `activity.py` (which is itself only consumed by other deprecated modules). Out of scope per `@INV-0086`.
 - [x] Institution gate GREEN via canonical recipe (`RESEARCH_INSTITUTION_VWIRE_DIRECT=1 bash scripts/verify-institution.sh`): all 7 tiers pass
 - [ ] Live launch succeeds (operator-driven; not part of this plan's automated verification)
 
-## 10. Corrections to the audit
+## 10. Corrections to the audit (resolved)
 
-- **Section 5.1 / Section 6 commit 4** listed kaplansky's `launcher/execution_report.py` and `launcher/reports.py` as duplicates of pi_monitor's `ExecutionReportWireModel`. On closer inspection they model a DIFFERENT shape — the on-disk `source-reports.jsonl` format, which has `recorded_unix` (a field the canonical wire model lacks). They are domain readers for the JSONL stream, not duplicates of the wire model. They were not deleted; a follow-up must extend `ExecutionReportWireModel` to include `recorded_unix` before they can be retired.
-- The deprecated math `_deprecated_launcher/reports.py` is the same situation — it reads the on-disk JSONL shape, not the wire frame. Retiring it requires the same canonical model extension.
-- These readers are already compliant with the directional import rule (no `pi_monitor.*` imports in kaplansky/src/launcher/*), so leaving them in place does not regress the rule.
+- **Section 5.1 / Section 6 commit 4** listed kaplansky's `launcher/execution_report.py` and `launcher/reports.py` as duplicates of pi_monitor's `ExecutionReportWireModel`. RESOLVED via commit 5a/5b: the canonical wire model absorbed `recorded_unix`; kaplansky's readers now delegate to it via the math facade. The legacy `ts` field (older supervisor version) is preserved by a thin `LegacyCompatibleReport` wrapper that adds only the `ts` fallback on top of the canonical model.
+- The deprecated math `_deprecated_launcher/reports.py` is NOT DONE: the deprecated namespace retirement is tracked separately per `@INV-0086`. The namespace is already isolated (only consumed by other deprecated modules); retiring it requires the broader deprecated-namespace cleanup.
 - **Section 2 import-rule grep** found two `TYPE_CHECKING`-only imports of `research_institution.contracts.source_decision.SourceDecision` in math (`mathlint.program_providers:45`, `mathlint.orchestration.real_source:43`). These are documented exceptions (the type comment explicitly notes @ADR-0014 compliance): pyright sees the type, runtime does not load RI. They are pre-existing (commits `266035b`, `a15b01d`); not touched in this audit. A future cleanup could remove the static coupling by moving `SourceDecision` to `mathlint.types` (math-owned) so the dispatch envelope type is owned by the kernel that uses it.
+
+## 11. End state
+
+After commits 1–5 + BC-5, the cross-repo wire-canonicalization audit is complete:
+
+| Concern | Before | After |
+|---|---|---|
+| Live-launch wire-drift bug | `execution_report_to_dict` emitted `digest` not `envelope_digest`; math's `LiveSource` rejected every round-trip | `ExecutionReportWireModel.from_dataclass()` is the sole emit path; first `report_result` round-trip succeeds |
+| `OperationKind` / `WorkspaceName` Literals in pi_monitor | Pin program identities (mathlint-research, kaplansky-workspace, etc.) on the stable surface — @ADR-0092 violations | Both are `str` on pi_monitor's surface; canonical Literals live in research-institution's `contracts.source_decision` |
+| `RoleName` Literal | Stays in pi_monitor (generic vocabulary, not program identities) | Unchanged — confirmed Q1 |
+| Duplicate wire-dict classes in RI | `SourceRevisionWireDict`, `WorkRequestWireDict`, `SourceDecisionWireDict` (Pydantic re-declarations) | Deleted; replaced with re-export aliases for pi_monitor's canonical wire models |
+| Kaplansky's direct pi_monitor imports | `from pi_monitor.work.work_source import ...` in 3 places | All 3 import via `mathlint.protocol.wire_types` |
+| Kaplansky's duplicate `ExecutionReport` readers | Local Pydantic + dataclass (modeled the on-disk JSONL shape, not the wire frame) | Replaced with a thin `LegacyCompatibleReport` wrapper that delegates core fields to `ExecutionReportWireModel` (via math facade); preserves legacy `ts` field fallback |
+| BC-4 (pi_monitor tests) | Scans `tests/` for program-identity literals | Wired into institution gate's `repo-boundary` check |
+| BC-5 (pi_monitor src/) | Not scanned | New static check; wired into institution gate alongside BC-4 |
+| AGENTS.md exempt-file documentation | Implicit grandfather | Explicit carve-out for `tests/mathlint_fixture/`, `tests/static/`, and BC-5's no-grandfather policy for `src/` |
+| Deprecated math `_deprecated_launcher/reports.py` | Reads on-disk JSONL shape | Not deleted; deprecated namespace retirement is tracked separately per `@INV-0086` |
+| Cross-repo TYPE_CHECKING exceptions (math → RI) | 2 hits (pre-existing) | Documented in audit §10; out of scope |
+
+Institution gate: GREEN (all 7 tiers pass via canonical recipe).
