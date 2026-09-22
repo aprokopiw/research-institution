@@ -219,7 +219,8 @@ def _v_wire_check(*, mode: str) -> GateCheck:
 
 
 def _repo_boundary_check() -> GateCheck:
-    """Run BC-1 (math repo boundary) and BC-4 (pi_monitor repo boundary) static checks.
+    """Run BC-1 (math repo boundary), BC-4 (pi_monitor test fixtures)
+    and BC-5 (pi_monitor src/) static checks.
 
     BC-1: ``tests/static/test_no_program_named_modules_in_tests.py``
     in the math repo. Catches math test/script files that hardcode
@@ -231,11 +232,17 @@ def _repo_boundary_check() -> GateCheck:
     hardcode a specific research-program identity (violates
     @ADR-0092).
 
-    Both checks are SKIP-on-missing rather than FAIL-on-missing
+    BC-5: ``tests/static/test_no_program_identity_in_src.py``
+    in the pi_monitor repo. The sibling of BC-4 for the
+    published library surface (``src/``). Catches any
+    program-identity literal that has leaked into pi_monitor's
+    stable surface (code, docstrings, or comments).
+
+    All checks are SKIP-on-missing rather than FAIL-on-missing
     because the operator may legitimately have one repo wired but
     not the other (cold-start scenarios).
 
-    See docs/operations/verification-gates.md (BC-1, BC-4 section).
+    See docs/operations/verification-gates.md (BC-1, BC-4, BC-5 section).
     """
     failures: list[str] = []
     skips: list[str] = []
@@ -252,8 +259,8 @@ def _repo_boundary_check() -> GateCheck:
             pass  # silent on success
         else:
             failures.append(f"bc-1: {result.stdout.strip()}{result.stderr.strip()}")
-    # BC-4 — pi_monitor
-    pi_check = (
+    # BC-4 — pi_monitor test fixtures
+    pi_check_fixtures = (
         Path.home()
         / "Documents"
         / "andrei"
@@ -262,17 +269,29 @@ def _repo_boundary_check() -> GateCheck:
         / "static"
         / "test_no_program_identity_in_fixtures.py"
     )
+    # BC-5 — pi_monitor src/
+    pi_check_src = (
+        Path.home()
+        / "Documents"
+        / "andrei"
+        / "pi_monitor"
+        / "tests"
+        / "static"
+        / "test_no_program_identity_in_src.py"
+    )
     pi_py = Path.home() / "Documents" / "andrei" / "pi_monitor" / ".venv" / "bin" / "python"
-    if not pi_check.is_file():
-        skips.append("bc-4: pi_monitor check script missing")
-    elif not pi_py.is_file():
-        skips.append("bc-4: pi_monitor .venv missing")
-    else:
+    for label, pi_check in (("bc-4", pi_check_fixtures), ("bc-5", pi_check_src)):
+        if not pi_check.is_file():
+            skips.append(f"{label}: pi_monitor check script missing")
+            continue
+        if not pi_py.is_file():
+            skips.append(f"{label}: pi_monitor .venv missing")
+            continue
         result = run((str(pi_py), str(pi_check)))
         if result.ok:
             pass  # silent on success
         else:
-            failures.append(f"bc-4: {result.stdout.strip()}{result.stderr.strip()}")
+            failures.append(f"{label}: {result.stdout.strip()}{result.stderr.strip()}")
     if failures:
         return GateCheck(
             name="repo-boundary",
@@ -288,7 +307,7 @@ def _repo_boundary_check() -> GateCheck:
     return GateCheck(
         name="repo-boundary",
         status=GateStatus.PASS,
-        detail="bc-1 (math) + bc-4 (pi_monitor) clean",
+        detail="bc-1 (math) + bc-4 (pi_monitor tests) + bc-5 (pi_monitor src) clean",
     )
 
 
