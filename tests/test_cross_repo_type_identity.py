@@ -23,6 +23,7 @@ means one class, not two mirrored copies.
 from __future__ import annotations
 
 import unittest
+from typing import Literal
 
 from pi_monitor.operator import supervisor_status
 from pi_monitor.work import work_source
@@ -40,16 +41,34 @@ class CrossRepoTypeIdentityTests(unittest.TestCase):
         self.assertIs(source_decision.CanonicalReasonCode, work_source.CanonicalReasonCode)
 
     def test_operation_kind_identity(self) -> None:
-        self.assertIs(source_decision.OperationKind, work_source.OperationKind)
+        # Per @ADR-0092: pi_monitor's stable surface is ``str``
+        # (no closed vocabulary; OS layer owns the canonical list).
+        # The OS layer's ``OperationKind`` is the closed Literal.
+        # They are deliberately different objects with different
+        # semantic roles.
+        self.assertIs(work_source.OperationKind, str)
+        self.assertEqual(
+            source_decision.OperationKind,
+            Literal["mathlint-research", "mathlint-verify", "mathlint-build", "speckit-task"],
+        )
 
     def test_role_name_identity(self) -> None:
+        # ``RoleName`` is a generic domain vocabulary (not a program
+        # identity) and stays a closed Literal in pi-monitor; both
+        # sides share the same Literal identity.
         self.assertIs(source_decision.RoleName, work_source.RoleName)
 
     def test_source_identity_identity(self) -> None:
         self.assertIs(source_decision.SourceIdentity, work_source.SourceIdentity)
 
     def test_workspace_name_identity(self) -> None:
-        self.assertIs(source_decision.WorkspaceName, work_source.WorkspaceName)
+        # Per @ADR-0092: pi_monitor's stable surface is ``str``;
+        # OS layer owns the canonical workspace-name list.
+        self.assertIs(work_source.WorkspaceName, str)
+        self.assertEqual(
+            source_decision.WorkspaceName,
+            Literal["default", "kaplansky-workspace", "math-workspace"],
+        )
 
     def test_supervisor_status_payload_identity(self) -> None:
         self.assertIs(

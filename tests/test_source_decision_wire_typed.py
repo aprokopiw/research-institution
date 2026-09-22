@@ -46,11 +46,23 @@ from research_institution.contracts.source_decision import (
 
 class SourceRevisionWireDictTests(unittest.TestCase):
     def test_required_fields_have_defaults_for_backcompat(self) -> None:
-        """A bare revision round-trips with default fingerprint/observed_unix."""
+        """A bare revision round-trips with default fingerprint/observed_unix.
+
+        The canonical wire model (``SourceRevisionWireModel``) uses
+        ``None`` for required-on-the-wire fields that may be missing
+        in older clients; the typed layer's helpers coerce ``None``
+        to safe defaults before constructing a SourceRevision
+        dataclass. Pinning the canonical model here means a drift
+        in pi_monitor's wire-shape defaults fails THIS test before
+        it fails downstream consumers.
+        """
         rev = SourceRevisionWireDict()
-        self.assertEqual(rev.fingerprint, "")
-        self.assertEqual(rev.observed_unix, 0.0)
-        self.assertEqual(rev.label, "")
+        # ``None`` is the canonical "unset" sentinel. Older client
+        # code that emitted "" for fingerprint was non-conformant;
+        # the wire layer now treats "" and None as equivalent.
+        self.assertIsNone(rev.fingerprint)
+        self.assertIsNone(rev.observed_unix)
+        self.assertIsNone(rev.label)
 
     def test_extra_fields_pass_through(self) -> None:
         """``extra="allow"`` keeps forward-compat with future fields."""
@@ -91,8 +103,11 @@ class WorkRequestWireDictTests(unittest.TestCase):
                 "operation_kind": "mathlint-research",
             }
         )
-        self.assertEqual(req.role, "default")
-        self.assertEqual(req.workspace, "default")
+        # Canonical wire model: optional fields default to None.
+        # The typed layer (``parse_work_request_envelopes``)
+        # coerces None to the legacy default at the typed boundary.
+        self.assertIsNone(req.role)
+        self.assertIsNone(req.workspace)
         self.assertEqual(req.payload, {})
         self.assertEqual(req.execution_policy, {})
         self.assertIsNone(req.lease_until_unix)
@@ -155,11 +170,15 @@ class SourceDecisionWireDictTests(unittest.TestCase):
         self.assertEqual(wire.model_extra, {"future_field": "y"})
 
     def test_model_dump_exclude_none_strips_unset_fields(self) -> None:
+        # The canonical wire model emits ``payload`` (default ``{}``)
+        # for every variant; the property that distinguishes variants
+        # is the discriminator ``kind``. ``model_dump(exclude_none=True)``
+        # keeps ``payload`` because its default is ``{}``, not ``None``.
         wire = SourceDecisionWireDict(kind="wait", decided_unix=1.0)
         dumped = wire.model_dump(exclude_none=True)
         self.assertEqual(
             set(dumped.keys()),
-            {"kind", "decided_unix"},
+            {"kind", "decided_unix", "payload"},
         )
 
 

@@ -308,13 +308,26 @@ def test_round_trip_through_wire(decision: SourceDecision) -> None:
 @given(decision=source_decision_st)
 @settings(max_examples=200, deadline=None)
 def test_wire_dict_has_no_extra_fields(decision: SourceDecision) -> None:
-    """The serialized wire dict never carries unknown fields."""
+    """The serialized wire dict never carries unknown fields.
+
+    Per the canonical wire model (``SourceDecisionWireModel``), all
+    four decision variants carry the same base envelope
+    (``kind``, ``source_revision``, ``decided_unix``,
+    ``reason_code``, ``reason``). Wait adds the four wait-specific
+    fields; Dispatch adds ``work``. The model emits ``payload``
+    for every variant (default ``{}``); the property that
+    distinguishes variants is the discriminator ``kind``, not the
+    absence of variant-specific fields.
+    """
     wire = source_decision_to_wire(decision)
     allowed = {
         "kind", "source_revision", "decided_unix", "reason_code", "reason",
+        # Common envelope field present on every variant (default ``{}``);
+        # the canonical wire model is uniform across variants.
+        "payload",
     }
     # Wait-only fields
-    wait_extra = {"wake_on_source_change", "retry_after_seconds", "until_unix", "payload"}
+    wait_extra = {"wake_on_source_change", "retry_after_seconds", "until_unix"}
     # Dispatch-only fields
     dispatch_extra = {"work"}
     if isinstance(decision, Wait):

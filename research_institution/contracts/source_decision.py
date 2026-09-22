@@ -44,8 +44,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
-
+from pi_monitor.protocol.wire_models import (
+    SourceDecisionWireModel as SourceDecisionWireDict,
+    SourceRevisionWireModel as SourceRevisionWireDict,
+    WorkRequestWireModel as WorkRequestWireDict,
+)
 from pi_monitor.protocol.work_envelopes import (
     BudgetPolicy as WorkRequestBudgetPolicy,
     ExecutionPolicy as WorkRequestExecutionPolicy,
@@ -58,7 +61,6 @@ from pi_monitor.work.work_source import (
     CanonicalReasonCode as PM_CanonicalReasonCode,
     DecisionKind as PM_DecisionKind,
     Dispatch,
-    OperationKind as PM_OperationKind,
     OperatorRequired,
     REASON_BLOCKED_WORK_PRESENT,
     REASON_FRONTIER_EXHAUSTED,
@@ -73,7 +75,6 @@ from pi_monitor.work.work_source import (
     Stop,
     Wait,
     WorkRequest,
-    WorkspaceName as PM_WorkspaceName,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,10 +106,27 @@ DecisionKind = PM_DecisionKind
 
 #: Cross-repo wire type aliases for WorkRequest's string-typed fields.
 #: Re-exports of the canonical Literal types from pi_monitor.
-OperationKind = PM_OperationKind
+#:
+#: ``OperationKind`` and ``WorkspaceName`` are owned by the OS layer
+#: (this module) per @ADR-0092 — pi_monitor only carries the wire
+#: type (``str``) and forwards verbatim; the canonical vocabulary
+#: lives here as a Literal so the OS validator can enforce it.
+#: ``SourceIdentity`` is fully opaque (pi-monitor never enumerates it).
+#: ``RoleName`` stays a closed Literal in pi-monitor because its
+#: values are generic domain role labels, not program identities.
+OperationKind = Literal[
+    "mathlint-research",
+    "mathlint-verify",
+    "mathlint-build",
+    "speckit-task",
+]
 RoleName = PM_RoleName
 SourceIdentity = PM_SourceIdentity
-WorkspaceName = PM_WorkspaceName
+WorkspaceName = Literal[
+    "default",
+    "kaplansky-workspace",
+    "math-workspace",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -134,95 +152,20 @@ type DecisionKindLiteral = Literal["dispatch", "wait", "operator_required", "sto
 
 
 # ---------------------------------------------------------------------------
-# The four decision variants — re-exports of pi_monitor's frozen
-# dataclasses. See module docstring for why we re-export rather
-# than mirror.
-# ---------------------------------------------------------------------------
-# Wire shape — Pydantic models so ``source_decision_to_wire`` returns a
-# concrete type instead of ``dict[str, Any]``. ``extra="allow"`` keeps
-# forward-compat (a future source may add a new field). The five
-# opaque policy dicts (``payload`` / ``execution_policy`` / ...)
-# stay ``dict[str, Any]`` at the wire layer because their typed
-# shape is the Pydantic models in :mod:`pi_monitor.protocol.work_envelopes`
-# (the boundary is :func:`parse_work_request_envelopes`).
-# ---------------------------------------------------------------------------
-
-
-class SourceRevisionWireDict(BaseModel):
-    """Wire shape of :class:`pi_monitor.work.work_source.SourceRevision`.
-
-    ``fingerprint`` and ``observed_unix`` are technically required
-    by the wire contract; ``observed_unix`` defaults to ``0.0``
-    so a malformed envelope with no timestamp surfaces as a
-    missing-``fingerprint``/unknown-``kind`` error at the parse
-    layer rather than a numeric-mismatch error in Pydantic.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    fingerprint: str = ""
-    observed_unix: float = 0.0
-    label: str = ""
-
-
-class WorkRequestWireDict(BaseModel):
-    """Wire shape of :class:`pi_monitor.work.work_source.WorkRequest`.
-
-    All optional fields default to ``"default"`` (role/workspace) or
-    ``None`` on the typed side; on the wire they are omitted via
-    ``model_dump(exclude_none=True, exclude_unset=True)`` at the
-    serialization site.
-
-    The five opaque fields (``payload`` / ``execution_policy`` /
-    ``session_policy`` / ``isolation`` / ``budget``) are source-
-    owned: their typed shapes are Pydantic models in
-    :mod:`pi_monitor.protocol.work_envelopes`. The wire-format JSON is
-    ``dict[str, Any]``; the typed shape is one ``.model_validate()``
-    away. See :func:`parse_work_request_envelopes` for the single
-    boundary that produces a typed :class:`WorkRequest`.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    source_identity: str
-    source_revision: SourceRevisionWireDict
-    operation_id: str
-    operation_kind: str
-    role: str = "default"
-    workspace: str = "default"
-    payload: dict[str, Any] = {}
-    execution_policy: dict[str, Any] = {}
-    session_policy: dict[str, Any] = {}
-    isolation: dict[str, Any] = {}
-    budget: dict[str, Any] = {}
-    execution_profile: str = ""
-    lease_until_unix: float | None = None
-
-
-class SourceDecisionWireDict(BaseModel):
-    """Wire shape of the four-decision-variant discriminated envelope.
-
-    All variant-specific fields are optional. Callers narrow by
-    inspecting the ``kind`` field first (the canonical
-    :class:`DecisionKind` StrEnum is the discriminator — the
-    string form is also accepted at parse time via Pydantic's
-    coercion).
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    kind: str | None = None
-    source_revision: SourceRevisionWireDict | None = None
-    decided_unix: float | None = None
-    reason_code: str | None = None
-    reason: str | None = None
-    work: list[WorkRequestWireDict] | None = None
-    wake_on_source_change: bool | None = None
-    retry_after_seconds: float | None = None
-    until_unix: float | None = None
-    payload: dict[str, Any] | None = None
-
-
+# Canonical wire models — re-exports of pi_monitor's wire models.
+# Imported at top of module (see ``from pi_monitor.protocol.wire_models import ...``).
+#
+# The OS layer is the canonical owner of the program-identity
+# vocabularies (``OperationKind``, ``WorkspaceName``); the wire
+# shape itself lives in pi_monitor. RI re-exports under stable
+# local names for back-compat with consumers that imported the
+# prior ``SourceRevisionWireDict`` / ``WorkRequestWireDict`` /
+# ``SourceDecisionWireDict`` re-declarations.
+#
+# Per the cross-repo rule: pi_monitor owns the wire protocol;
+# math re-exports; kaplansky and ri import from one of those
+# two. A drift in any of the four canonical wire models now
+# surfaces at every import site via pyright.
 # ---------------------------------------------------------------------------
 # Wire serialization helpers
 # ---------------------------------------------------------------------------
@@ -265,7 +208,7 @@ def source_decision_to_wire(decision: SourceDecision) -> SourceDecisionWireDict:
             wake_on_source_change=decision.wake_on_source_change,
             retry_after_seconds=decision.retry_after_seconds,
             until_unix=decision.until_unix,
-            payload=dict(decision.payload) if decision.payload else None,
+            payload=dict(decision.payload) if decision.payload else {},
         )
     if isinstance(decision, OperatorRequired):
         return SourceDecisionWireDict(
