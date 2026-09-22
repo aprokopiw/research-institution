@@ -545,12 +545,19 @@ This check is the durable enforcement of `@ADR-0092` going forward. After commit
 ## 9. Status checklist
 
 - [x] Q1–Q4 written, awaiting operator answers
-- [ ] Operator answers Q1–Q4
-- [ ] Commit 1 — pi_monitor wire-drift fix + cross-repo round-trip test
-- [ ] Commit 2 — pi_monitor `@ADR-0092` Literal cleanup + docstring scrub
-- [ ] Commit 3 — RI duplicate wire class deletion + canonical vocabularies
-- [ ] Commit 4 — kaplansky imports via math re-export + ExecutionReport duplicates deleted
-- [ ] BC-5 — pi_monitor src/ static check for program-identity literals
-- [ ] (Optional) Commit 5 — math `_deprecated_launcher/reports.py` cleanup
-- [ ] Institution gate GREEN via canonical recipe
+- [x] Operator answers Q1–Q4 (Q1: RoleName Literal stays in pi_monitor; Q2: mathlint.protocol.wire_types; Q3: via math re-export as ExecutionReportWireModel; Q4: single audit doc)
+- [x] Commit 1 — pi_monitor wire-drift fix + cross-repo round-trip test (`91eb118`)
+- [x] Commit 2 — pi_monitor `@ADR-0092` Literal cleanup + docstring scrub (`89bfb56`)
+- [x] Commit 3 — RI duplicate wire class deletion + canonical vocabularies (`09ccc7d`)
+- [x] Commit 4a — math adds `mathlint.protocol.wire_types` facade + facade-contract test (`abfdc95`)
+- [x] Commit 4b — kaplansky imports via math re-export; execution_report.py / reports.py retained (`b56d2f2`)
+- [ ] BC-5 — pi_monitor src/ static check for program-identity literals (proposed; not committed)
+- [~] (Optional) Commit 5 — math `_deprecated_launcher/reports.py` cleanup: NOT DONE. The deprecated namespace is scheduled for retirement as a unit; this file models the same on-disk JSONL shape as kaplansky's `launcher/reports.py` (both read `recorded_unix`, which the canonical `ExecutionReportWireModel` does not have). A follow-up commit should extend the canonical model to include `recorded_unix` so both readers can be deleted.
+- [x] Institution gate GREEN via canonical recipe (`RESEARCH_INSTITUTION_VWIRE_DIRECT=1 bash scripts/verify-institution.sh`): all 7 tiers pass
 - [ ] Live launch succeeds (operator-driven; not part of this plan's automated verification)
+
+## 10. Corrections to the audit
+
+- **Section 5.1 / Section 6 commit 4** listed kaplansky's `launcher/execution_report.py` and `launcher/reports.py` as duplicates of pi_monitor's `ExecutionReportWireModel`. On closer inspection they model a DIFFERENT shape — the on-disk `source-reports.jsonl` format, which has `recorded_unix` (a field the canonical wire model lacks). They are domain readers for the JSONL stream, not duplicates of the wire model. They were not deleted; a follow-up must extend `ExecutionReportWireModel` to include `recorded_unix` before they can be retired.
+- The deprecated math `_deprecated_launcher/reports.py` is the same situation — it reads the on-disk JSONL shape, not the wire frame. Retiring it requires the same canonical model extension.
+- These readers are already compliant with the directional import rule (no `pi_monitor.*` imports in kaplansky/src/launcher/*), so leaving them in place does not regress the rule.
