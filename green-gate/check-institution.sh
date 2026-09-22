@@ -13,4 +13,14 @@ set -e
 cd "$(dirname "$0")/.."
 export MATHLINT_INSTITUTION_DIR="${MATHLINT_INSTITUTION_DIR:-$PWD}"
 export PYTHONPATH="${PYTHONPATH:-$PWD}"
-exec python3 -m research_institution.gates.aggregate "$@"
+# Prefer the repo's venv python so the v-compose tier (which
+# invokes ``sys.executable`` for its in-process pytest run)
+# sees the institution's mathlint, not whatever venv's
+# ``python3`` happens to be on PATH (e.g. pi_monitor's
+# older mathlint). Falls back to system python3 if the
+# venv is missing.
+if [ -x ".venv/bin/python" ]; then
+    exec .venv/bin/python -m research_institution.gates.aggregate "$@"
+else
+    exec python3 -m research_institution.gates.aggregate "$@"
+fi

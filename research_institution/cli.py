@@ -204,12 +204,16 @@ def check_gate(
     # Production callers (``research-institution``) trigger
     # ``discover_work_selection_programs`` at module import time
     # (``mathlint.cli``); the CLI is a fresh process so we run it
-    # here defensively.
+    # defensively when the registry is still empty. We do NOT call
+    # discover unconditionally — that would clobber tests that
+    # inject a fake callable into the registry.
     try:
         from mathlint.program_providers import (
             discover_work_selection_programs as _discover_ws,
+            work_selection_callables as _callables,
         )
-        _discover_ws()
+        if not _callables():
+            _discover_ws()
     except ImportError:
         pass
     from research_institution.dispatcher import Dispatcher
