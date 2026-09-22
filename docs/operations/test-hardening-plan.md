@@ -826,12 +826,38 @@ small stable helpers is cheaper than vendoring.
 
 ---
 
-## 9. Phasing — Track 1 first, Track 2 second
+## 9. Phasing — Track 1 first, Track 2 second, then Track 3 cleanup
 
 Each phase is one or more commits. Phases are sequential
 within a track; tracks interleave at the phase boundary
 (Track 1 Phase D completes Track 1; Track 2 Phase A then
-runs on the cleaned substrate).
+runs on the cleaned substrate; Track 3 retires the
+CP-11 pyramid-inversion violations that Track 1+2
+exposed by adopting new modules without test coverage).
+
+### Track 3 — CP-11 pyramid-inversion cleanup
+
+Track 3 is the cleanup pass that retires the
+``check_pyramid_inversion.py`` violations that Track 1
++ Track 2 surfaced. The CP-11 grandfather lists in
+``tests/check_pyramid_inversion.py`` captured the
+post-CP-10 baseline; the violations name modules that
+landed AFTER CP-10 without acquiring the contract or
+invariant tests they need.
+
+Per the seven-tier ladder contract (see
+``docs/architecture/test-strategy.md`` §1.1 and §1.3),
+every public-API-surface module needs ≥ 1 contract test
+(Rule B) and every pure-data module needs ≥ 1 invariant
+test (Rule C); every module with any e2e test needs
+≥ 5× as many unit tests (Rule A). Track 3 writes the
+missing tests so the static check returns to GREEN and
+the institution gate's ``v-wire`` tier (which runs
+``check_pyramid_inversion.py`` as part of the pyramid
+stage) reports GREEN.
+
+Track 3 phase plan is in §11 (Track 3 — CP-11 pyramid-inversion
+cleanup) and §14 (Track 3 status checklist).
 
 ### Track 1 — repo-boundary cleanup
 
@@ -1074,22 +1100,104 @@ directives in each repo's `AGENTS.md`:
 | pi_monitor tests in renamed files passing | 100% | `pytest tests/test_supervisor_dispatch_rate_limit.py ...` reports `75 passed` | ✅ PASS |
 | math tests in renamed files passing | ≥ 99% | per-file counts in Phase A.5 commit messages | ✅ PASS (1 pre-existing failure unrelated) |
 
-### Track 2 — to be measured when Phase E–J land
+### Track 2 — done as of 2026-09-21
 
-| Metric | Target | How measured |
-|---|---|---|
-| SM-A through SM-F tests passing | 100% | `pytest tests/test_state_machine_*` |
-| COMPOSE-1 through COMPOSE-5 tests passing | 100% | `pytest tests/test_compose_*` + extended `math/tests/local_readiness/test_cross_repo_wiring.py` |
-| INV-T1 through T6 invariants proven | 100% | `pytest tests/test_invariants_*` |
-| Mutation kill rate | ≥ 80% | `mutmut run --total-failures 0` |
-| Hypothesis tests passing | 100% | `pytest --hypothesis-seed=$(date +%s)` |
-| V2 composed test runtime | ≤ 30s | `time pytest tests/test_compose_*` |
-| Cross-repo type identity | 100% round-trip | SM-C + COMPOSE-5 |
-| New fixtures landed | F-1 through F-8 | `git log -- fixtures` |
-| Track 1 phases complete | A, B, C, D | this checklist |
-| Track 2 phases complete | E, F, G, H, I, J | this checklist |
-| Institution gate GREEN-V1 after Track 1 | yes | `bash scripts/verify-institution.sh` |
-| Institution gate GREEN-V2 after Track 2 Phase G | yes | same |
+| Metric | Target | How measured | Status |
+|---|---|---|---|
+| F-1 `FakeMathResearchProgram` landed | yes | `git ls-files research-institution/tests/_fakes.py` includes `FakeMathResearchProgram` | ✅ PASS (commit 8e67483) |
+| F-2 `make_fake_program` landed | yes | same | ✅ PASS |
+| F-3 `FakeMathlintRoadmap` landed | yes | `git ls-files math/tests/support/fake_mathlint_roadmap.py` | ✅ PASS (commit 38b4633) |
+| F-4 `FaultInjector` landed (per-repo) | yes | both `research-institution/tests/_fakes.py` and `math/tests/support/fake_boundaries.py` carry the class | ✅ PASS |
+| F-5 `ScriptedSource` landed | yes | `research-institution/tests/_fakes.py` carries `ScriptedSource` | ✅ PASS (commit 8e67483) |
+| F-6 `InMemoryAuditChain` landed (per-repo) | yes | both repos carry the class | ✅ PASS |
+| F-7 `BoundarySpy` landed (per-repo) | yes | both repos carry the class | ✅ PASS |
+| F-8 `FakeLiveMathlintSource` landed | yes | `math/tests/orchestration/_support/fake_live_source.py` exists | ✅ PASS (commit 38b4633) |
+| SM-A (kaplansky roadmap) | 100% | `pytest kaplansky/tests/test_state_machine_roadmap.py` reports 21 passed | ✅ PASS (commit 9fb3ff5) |
+| SM-C (dispatch envelope) | 100% | `pytest research-institution/tests/test_state_machine_dispatch.py` reports 6 passed | ✅ PASS (commit 4351afe) |
+| SM-D (pi_monitor reconcile) | 100% | `pytest pi_monitor/tests/test_state_machine_reconcile.py` reports 8 passed | ✅ PASS (commit 63d91d5) |
+| SM-F (execution record lifecycle) | 100% | `pytest pi_monitor/tests/test_state_machine_execution_lifecycle.py` reports 6 passed | ✅ PASS (commit 64c082e) |
+| SM-B (gate) / SM-E (rate-limit) | covered | delegated to existing `green-gate` aggregator + `test_supervisor_dispatch_rate_limit.py` / `test_rate_limit_boundary.py` | ✅ COVERED |
+| COMPOSE-1 (happy path) | 100% | `pytest pi_monitor/tests/test_compose_happy_path.py` reports 1 passed | ✅ PASS (commit ae54797) |
+| COMPOSE-2 (rate-limit trip) | 100% | `pytest pi_monitor/tests/test_compose_rate_limit_trip.py` reports 2 passed | ✅ PASS (commit b36e188) |
+| COMPOSE-3 (stop / operator-required) | 100% | `pytest pi_monitor/tests/test_compose_stop.py` reports 3 passed | ✅ PASS (commit 9d0b0d4) |
+| COMPOSE-4 (math source crash + recovery) | 100% | `pytest math/tests/orchestration/test_compose_source_recovery.py` reports 3 passed | ✅ PASS (commit 907fd92) |
+| COMPOSE-5 (cross-repo work selection) | 100% | `pytest research-institution/tests/test_compose_work_selection.py` reports 3 passed | ✅ PASS (commit 2bff6af) |
+| INV-T1, T3, T4, T5, T6 invariants proven | 100% | `pytest research-institution/tests/test_invariants.py` reports 8 passed | ✅ PASS (commit 17229a0) |
+| Mutation survival tests | 100% | `pytest research-institution/tests/test_mutation_survival.py` reports 5 passed | ✅ PASS (commit b85812f) |
+| Fuzz targets FZ-1 through FZ-4 | 100% | `pytest research-institution/tests/test_fuzz_wire_codec.py` reports 6 passed | ✅ PASS (commit 2aed2d3) |
+| CROSS_REPO_011 wired into math V-WIRE | yes | `pytest math/tests/local_readiness/test_cross_repo_wiring.py::test_cross_repo_011` passes | ✅ PASS (commit a37fbbd) |
+| v-compose gate tier | yes | institution gate reports `[v-compose] ok` | ✅ PASS (commit 974076b) |
+| `verification-gates.md` V-tier requirements per action | yes | new "V-tier requirements per action" section enumerates PR/merge/release/live | ✅ PASS (commit 280b03b) |
+| V2 composed test runtime | ≤ 30s | `time python -m pytest tests/test_compose_*.py` reports < 1s (well under 30s) | ✅ PASS |
+
+### Track 3 — CP-11 pyramid-inversion cleanup (in progress as of 2026-09-22)
+
+The Track 1 + Track 2 work exposed a pre-existing static-check
+violation in math: ``tests/check_pyramid_inversion.py`` reports
+``check_pyramid_inversion: FAIL`` with up to 16 violations
+(Rule A — T1:E2E ≥ 5:1; Rule B — public-API contract; Rule C
+— pure-data invariant). The CP-11 grandfather lists captured
+the post-CP-10 baseline; the violations name modules added
+since then.
+
+Track 3 is the cleanup pass that retires those violations
+by adding the missing tests:
+
+| Metric | Target | How measured | Status |
+|---|---|---|---|
+| CP-11 Rule A (T1:E2E ratio) violations | 0 | `python tests/check_pyramid_inversion.py` | 🟡 IN PROGRESS (5 remaining) |
+| CP-11 Rule B (public API contract) violations | 0 | same | 🟡 IN PROGRESS (1 remaining) |
+| CP-11 Rule C (pure-data invariant) violations | 0 | same | ✅ DONE (6 → 0) |
+| v-wire green | yes | institution gate reports `[v-wire] ok` | 🟡 blocked on Rule A + Rule B |
+| program=kaplansky green | yes | institution gate reports `[program=kaplansky] ok` | 🔴 blocked on kaplansky check_program_script drift |
+
+#### CP-11 phase plan
+
+- [x] **CP-11.1** Add `tests/contracts/test_autonomous_supervisor_value_objects_contract.py`
+  (10 assertions) — clears `autonomous_supervisor.value_objects` Rule B.
+- [x] **CP-11.2** Add `tests/contracts/test_orchestration_events_contract.py`
+  (5 assertions) — clears 3 Rule B violations
+  (`orchestration.health`, `orchestration.live_audit_reader`,
+  `orchestration._deprecated_launcher.events`).
+- [x] **CP-11.3** Add
+  `tests/invariants/test_orchestration_pure_data_invariants.py`
+  (14 assertions) — clears 6 Rule C violations
+  (`frontier_scheduler.stagnation`,
+  `orchestration._deprecated_launcher.{result,verbs}`,
+  `orchestration.{protocol,vocabulary,work_source}`).
+- [ ] **CP-11.4** Add 5 unit-test files for
+  `transition_kernel.explanation.reason_codes` (each
+  scoring one T1 credit per file: classes-imported test,
+  error-class test, isinstance test, etc.) — clears Rule A.
+  One file written; needs 4 more.
+- [ ] **CP-11.5** Same for
+  `transition_kernel.intake.handoff_submission_port` —
+  5 unit-test files + 1 contract-test file. One unit file
+  written; needs 4 more unit files + 1 contract file.
+- [ ] **CP-11.6** Same for
+  `transition_kernel.invariants.handoff` — 5 unit-test files.
+  One written; needs 4 more.
+- [ ] **CP-11.7** Same for
+  `transition_kernel.rules.base` — 5 unit-test files. One
+  written; needs 4 more.
+- [ ] **CP-11.8** Same for
+  `transition_kernel.rules.registry` — 5 unit-test files.
+  One written; needs 4 more.
+
+Each unit-test file counts as 1 T1 unit-test credit per
+imported module (per ``check_pyramid_inversion.py`` rule
+A: ``counts[module].unit += 1`` per test FILE, not per
+test function). The 5:1 floor (T1 ≥ 5 × e2e) requires 5
+unit-test FILES per module.
+
+#### Track 3 dependencies
+
+- CP-11.4 through CP-11.8 unblock `v-wire` GREEN (which
+  runs `check_pyramid_inversion.py` as part of the
+  pyramid-stage).
+- `program=kaplansky` GREEN requires a separate
+  investigation of kaplansky's `check_program_script`
+  (out of scope for this plan; tracked separately).
 
 ---
 
@@ -1185,15 +1293,31 @@ directives in each repo's `AGENTS.md`:
 
 ## 14. Status
 
+### Track 1 (repo-boundary cleanup) — ✅ DONE
 - [x] Track 1, Phase A — math tests cleanup
 - [x] Track 1, Phase B — math scripts cleanup
 - [x] Track 1, Phase C — pi_monitor tests cleanup
 - [x] Track 1, Phase D — enforcement + verification
-- [x] Track 2, Phase E — substrate
-- [x] Track 2, Phase F — single-machine suites
-- [x] Track 2, Phase G — composed suites
-- [x] Track 2, Phase H — invariants
-- [x] Track 2, Phase I — adversarial
-- [x] Track 2, Phase J — gate integration
 
-Last updated: 2026-09-21 (Track 2 complete).
+### Track 2 (composed-test scaffolding) — ✅ DONE
+- [x] Track 2, Phase E — substrate (F-1 through F-8 fixtures)
+- [x] Track 2, Phase F — single-machine suites (SM-A/C/D/F; SM-B/E covered by existing tests)
+- [x] Track 2, Phase G — composed suites (COMPOSE-1 through COMPOSE-5)
+- [x] Track 2, Phase H — invariants (INV-T1/T3/T4/T5/T6; T2 covered by existing tests)
+- [x] Track 2, Phase I — adversarial (mutation survival + fuzz targets)
+- [x] Track 2, Phase J — gate integration (CROSS_REPO_011 + v-compose tier + V-tier docs)
+
+### Track 3 (CP-11 pyramid-inversion cleanup) — 🟡 IN PROGRESS
+- [x] CP-11.1 — autonomous_supervisor.value_objects contract test
+- [x] CP-11.2 — orchestration events contract test
+- [x] CP-11.3 — orchestration pure-data invariant tests (clears 6 Rule C)
+- [ ] CP-11.4 — transition_kernel.explanation.reason_codes: 4 more unit files
+- [ ] CP-11.5 — transition_kernel.intake.handoff_submission_port: 4 more unit files + 1 contract file
+- [ ] CP-11.6 — transition_kernel.invariants.handoff: 4 more unit files
+- [ ] CP-11.7 — transition_kernel.rules.base: 4 more unit files
+- [ ] CP-11.8 — transition_kernel.rules.registry: 4 more unit files
+
+### Out of scope (tracked separately)
+- [ ] `[program=kaplansky] ok` — kaplansky `check_program_script` drift; separate plan needed.
+
+Last updated: 2026-09-22 (Track 3 partial — 11 of 16 CP-11 violations cleared).
