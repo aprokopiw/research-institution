@@ -12,7 +12,8 @@ in three repos:
 
 - `research-institution/docs/semantic/{adr,invariants,contracts}/`
 - `math/docs/semantic/{adr,invariants,contracts,conventions}/`
-- `pi_monitor/docs/semantic/{adr,invariants,contracts,conventions}/`
+- `pi_monitor/docs/semantic/{adr,invariants,contracts,constraints}/`
+  (pi_monitor's primary ADRs live at `pi_monitor/docs/adr/`)
 - `kaplansky/docs/semantic/{adr,invariants,contracts,conventions}/`
 
 A fresh agent reading the worker prompt sees an anchor
@@ -21,7 +22,7 @@ lives. This registry collapses that lookup into one read.
 
 The registry is **not authoritative** — the source of truth is
 always the ADR / INV / CTR / CON file itself. The registry just
-says "to read `@ADR-0091`, look at `pi_monitor/docs/semantic/adr/...`".
+says "to read `@ADR-0091`, look at `math/docs/semantic/adr/...`".
 
 ## Index
 
@@ -58,19 +59,21 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 | Anchor | Lives in | Title (abridged) |
 |--------|----------|------------------|
 | `@ADR-0014` | `math/docs/semantic/adr/` | mathlint does not import program-named modules |
-| `@ADR-0091` | `math/docs/semantic/adr/` | mathlint does not ship program launchers |
+| `@ADR-0091` | `math/docs/semantic/adr/` | mathlint does not ship program-specific launchers |
 | `@ADR-0097` | `math/docs/semantic/adr/` | live source snapshot — consult adapter exposing the kernel to the live source-decision flow (plan-013 sibling) |
-| `@INV-0006` | `math/docs/semantic/invariants/` | (math) |
+| `@INV-0006` | `math/docs/semantic/invariants/` | deterministic registry and typed effects |
 | `@INV-0093` | `math/docs/semantic/invariants/` | (math; superset of institution's INV-0093) |
 
 ### Pi-monitor anchors (most-cited)
 
 | Anchor | Lives in | Title (abridged) |
 |--------|----------|------------------|
-| `@ADR-0021` | `pi_monitor/docs/semantic/adr/` | self-supervision: pi-monitor supervises itself |
-| `@ADR-0024` | `pi_monitor/docs/semantic/adr/` | closed strict task-marker vocabulary |
-| `@CON-0002` | `pi_monitor/docs/semantic/contracts/` | (paired with ADR-0024) |
-| `@INV-0022` | `pi_monitor/docs/semantic/invariants/` | (audit-chain-break contract) |
+| `@ADR-0019` | `pi_monitor/docs/adr/0019-live-campaign-sequencing.md` | cross-repository ownership and sequential integration (**superseded** by `@ADR-0001` + `@ADR-0013`) |
+| `@ADR-0021` | `pi_monitor/docs/adr/0021-self-supervision-pi-monitor.md` | self-supervision of pi_monitor |
+| `@ADR-0024` | `pi_monitor/docs/adr/0024-closed-strict-task-marker-vocabulary.md` | closed, strict task-marker vocabulary for the Spec-Kit WorkSource |
+| `@CTR-0001` | `pi_monitor/docs/semantic/contracts/` | work sources and runtimes exchange revisioned execution facts |
+| `@CTR-0002` | `pi_monitor/docs/semantic/contracts/` | worker outcomes are bounded and non-authoritative |
+| `@CTR-0003` | `pi_monitor/docs/semantic/contracts/` | external work-source transport is bounded and fail-closed |
 
 ## Operator workflow
 
