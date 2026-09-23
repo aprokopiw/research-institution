@@ -141,15 +141,24 @@ The cross-repo round-trip test proposed in §7 commit 1 closes this gap.
 
 ### Pi_monitor src/ has program-name literals
 
-| File:line | Literal | Status |
-|---|---|---|
-| `work/work_source.py:174-179` | `OperationKind = Literal["mathlint-research", "mathlint-verify", "mathlint-build", "speckit-task"]` | ❌ violation |
-| `work/work_source.py:194-198` | `WorkspaceName = Literal["default", "kaplansky-workspace", "math-workspace"]` | ❌ violation |
-| `work/work_source.py:155-156` | Docstring cites `"kaplansky-research-program"` and `"mathlint-research"` | ❌ violation |
-| `work/work_source.py:368` | Docstring: "work-source identity is whatever program (e.g. mathlint) in its source" | ❌ violation |
-| `protocol/work_envelopes.py:23` | Docstring citation of `kaplansky.roadmap_item.KaplanskyRoadmapItem` | ❌ violation |
-| `protocol/work_envelopes.py:41` | Docstring citation of `mathlint.models` | ❌ violation |
-| `work/work_source.py:50` | Docstring citation of `research_institution.contracts.source_decision.DecisionKind` | ❌ violation (RI is also a project) |
+| File:line | Literal | Status (at audit) | Resolution |
+|---|---|---|---|
+| `work/work_source.py:174-179` | `OperationKind = Literal["mathlint-research", "mathlint-verify", "mathlint-build", "speckit-task"]` | ❌ violation | ✅ commit `89bfb56` — `OperationKind = str` |
+| `work/work_source.py:194-198` | `WorkspaceName = Literal["default", "kaplansky-workspace", "math-workspace"]` | ❌ violation | ✅ commit `89bfb56` — `WorkspaceName = str` |
+| `work/work_source.py:155-156` | Docstring cites `"kaplansky-research-program"` and `"mathlint-research"` | ❌ violation | ✅ commit `89bfb56` — scrubbed |
+| `work/work_source.py:368` | Docstring: "work-source identity is whatever program (e.g. mathlint) in its source" | ❌ violation | ✅ commit `89bfb56` — scrubbed |
+| `protocol/work_envelopes.py:23` | Docstring citation of `kaplansky.roadmap_item.KaplanskyRoadmapItem` | ❌ violation | ✅ commit `89bfb56` — scrubbed |
+| `protocol/work_envelopes.py:41` | Docstring citation of `mathlint.models` | ❌ violation | ✅ commit `89bfb56` — scrubbed |
+| `work/work_source.py:50` | Docstring citation of `research_institution.contracts.source_decision.DecisionKind` | ❌ violation (RI is also a project) | ✅ commit `89bfb56` — scrubbed |
+
+A second pass (commits `94e1576` + `9ba4d48`) caught the
+remaining `research-institution` references that the
+original commit missed: docstrings in
+`work_source.py`, `external_source.py`, `config/config.py`,
+`supervisor_status.py`, and the test files. The BC-4 and
+BC-5 static checks were extended to flag
+`research_institution` literals going forward, so any
+reintroduction fails CI.
 
 Note: `SourceIdentity` was already relaxed from `Literal[...]` to `str` (with a docstring acknowledging the `@ADR-0092` reason). The same pattern needs to apply to `OperationKind` and `WorkspaceName`.
 
