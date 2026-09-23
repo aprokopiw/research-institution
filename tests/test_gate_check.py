@@ -273,6 +273,44 @@ def test_gate_closed_when_no_active_work_error(tmp_path: Path) -> None:
     assert "no K items active" in v.reason
 
 
+def test_gate_unknown_when_operator_direction_required(tmp_path: Path) -> None:
+    """OperatorDirectionRequiredError -> UNKNOWN with ``(operator-direction-required)`` (per @INV-0094).
+
+    The dispatcher inspects the program's exception class by
+    attribute lookup on the callable's module (the OS does not
+    hardcode any program in source). This test pins that
+    attribute-lookup contract; if the lookup breaks, the
+    dispatcher's ``TASK_KIND_ROADMAP_FAILED`` fallback will
+    silently misclassify the verdict and the supervisor will
+    fall into the no-delta loop this invariant defends against.
+    """
+    class OperatorDirectionRequiredError(LookupError):
+        pass
+
+    def callable_obj(repository, *, source_revision):
+        raise OperatorDirectionRequiredError(
+            "operator direction required:\n  - K4 (parked)"
+        )
+
+    # Make the class discoverable on the callable's __module__.
+    import sys
+    fake_module = type(sys)("fake_program_module")
+    fake_module.OperatorDirectionRequiredError = OperatorDirectionRequiredError
+    fake_module.RoadmapNotFoundError = type("RoadmapNotFoundError", (LookupError,), {})
+    fake_module.NoActiveWorkError = type("NoActiveWorkError", (LookupError,), {})
+    sys.modules["fake_program_module"] = fake_module
+    callable_obj.__module__ = "fake_program_module"
+    try:
+        with _register_callable("kaplansky", callable_obj):
+            v = check_gate(_prog(tmp_path))
+    finally:
+        sys.modules.pop("fake_program_module", None)
+    assert v.status == GateVerdictStatus.UNKNOWN
+    assert v.task_kind == "(operator-direction-required)"
+    assert v.gate_open is False
+    assert "K4 (parked)" in v.reason
+
+
 def test_gate_unknown_when_no_callable_registered(tmp_path: Path, monkeypatch) -> None:
     """No callable registered -> UNKNOWN with ``(no-work-selection-callable)``.
 
@@ -483,6 +521,7 @@ def test_cross_repo_010_check_gate_uses_real_catalog_entry(tmp_path: Path) -> No
         "(no-active-work)",
         "(roadmap-missing)",
         "(no-work-selection-callable)",
+        "(operator-direction-required)",  # @INV-0094
         "(roadmap-failed)",
     }
     if verdict.status == GateVerdictStatus.OPEN and verdict.task_kind not in valid_kinds:

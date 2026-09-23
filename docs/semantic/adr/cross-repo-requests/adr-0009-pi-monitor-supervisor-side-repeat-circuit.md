@@ -19,6 +19,12 @@ origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 
 **Drafted in research-institution; pending ratification in pi_monitor.**
 
+Reproduced in the live institution on 2026-09-22T21:13–21:18Z
+(operation K4 in the `mathlint-local-readiness` slug; 4
+identical-outcome attempts in 6 minutes; see
+`@INV-0094` for the durable evidence anchors). The gap is
+real and unbounded; this ADR remains blocking until shipped.
+
 ## Origin (postmortem)
 
 The 187-attempt `blocked/stalled` loop was the supervisor's fault as
@@ -87,6 +93,25 @@ supervisor-side circuit is defense-in-depth that catches:
       `~/.local/state/mathlint/pi-monitor/audit.jsonl`.
 - [ ] Coexists with existing knobs: `max_nudges_per_hour` etc. still
       fire independently.
+
+## Live reproduction (K4 / 2026-09-22)
+
+`mathlint local-pi-monitor` slug dispatched operation K4
+six times in 14 minutes. Attempts 3, 4, 5, 6 published
+`outcome=no_delta` with **identical outcome digest**
+`aae2f6d576f9655b86bc535d465797c69da760921f71ca85d7926d0d6099b709`.
+Each re-attempt cost ~$0.20 and ~4700 tokens of
+"re-read my own attempt file and confirm." Per the recipe
+stop condition #1 (same task >5× without resolution → 187-
+attempt bug, kill and investigate), this is 1 attempt from
+the playbook kill threshold.
+
+The supervisor's existing `[recovery]` knobs
+(`max_nudges_per_hour`, `max_same_session_restarts_per_hour`)
+are NOT per-op; they are per-hour. They did not fire. The
+only caps that bound the loop are the rate-limit caps
+(`max_tokens_per_*`), so the operator-grade stop today is
+the `[rate_limits]` config (see `@INV-0094`).
 
 ## Cross-references
 

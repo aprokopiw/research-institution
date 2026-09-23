@@ -62,9 +62,11 @@ from mathlint.program_providers import (
 # and dataclass equality hold across the institution boundary.
 from research_institution.contracts.source_decision import (
     REASON_NO_ELIGIBLE_WORK,
+    REASON_OPERATOR_REQUIRED,
     REASON_WAIT_REQUESTED,
     REASON_WORK_AVAILABLE,
     Dispatch,
+    OperatorRequired,
     SourceRevision,
     Wait,
     WorkRequest,
@@ -231,7 +233,9 @@ def _read_catalog_program_name(repo: Path) -> str | None:
     return None
 
 
-def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
+def select_next_work_for_supervisor(
+    repository: Path,
+) -> Dispatch | Wait | OperatorRequired:
     """The OS-level WorkSourceProvider.
 
     Contract: @CTR-0094. The OS owns the *transport* (typed
@@ -313,6 +317,22 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
             wake_on_source_change=True,
             retry_after_seconds=30.0,
         )
+    except _ProgramOperatorDirectionRequiredError as exc:
+        # Per @INV-0094: every active item is gated on operator
+        # input; the math agent is in the no-delta loop. Emit
+        # ``operator_required`` so the supervisor pauses and the
+        # operator sees the parked questions inline. This
+        # replaces the "Wait with no_eligible_work, re-ask in
+        # 60s" pattern that drives the 187-attempt bug
+        # (ADR-0009 is the durable supervisor-side fix; this is
+        # the program-side interlock that closes the loop on
+        # the math side until ADR-0009 ships).
+        return OperatorRequired(
+            source_revision=source_revision,
+            decided_unix=observed,
+            reason_code=REASON_OPERATOR_REQUIRED,
+            reason=str(exc),
+        )
     except _ProgramNoActiveWorkError as exc:
         return Wait(
             source_revision=source_revision,
@@ -359,6 +379,16 @@ class _ProgramNoActiveWorkError(LookupError):
     """Proof program has zero active items with next_action."""
 
 
+class _ProgramOperatorDirectionRequiredError(LookupError):
+    """Proof program has ACTIVE items but every one is operator-blocked.
+
+    Per @INV-0094, this is the institutional signal that the math
+    agent has bounded its work and the supervisor must surface
+    ``operator_required`` instead of re-dispatching into the
+    no-delta loop.
+    """
+
+
 def _ask_program_for_work(
     callable_obj: Callable[..., object],
     repository: Path,
@@ -387,6 +417,7 @@ def _ask_program_for_work(
         exc_module = None
     roadmap_not_found = getattr(exc_module, "RoadmapNotFoundError", None)
     no_active_work = getattr(exc_module, "NoActiveWorkError", None)
+    operator_direction_required = getattr(exc_module, "OperatorDirectionRequiredError", None)
     roadmap_parse = getattr(exc_module, "RoadmapParseError", None)
 
     try:
@@ -394,6 +425,12 @@ def _ask_program_for_work(
     except Exception as exc:  # noqa: BLE001 — boundary catch
         if roadmap_not_found is not None and isinstance(exc, roadmap_not_found):
             raise _ProgramRoadmapNotFoundError(str(exc)) from exc
+        if operator_direction_required is not None and isinstance(exc, operator_direction_required):
+            # Per @INV-0094: the program has bounded every available
+            # item; the math agent is in the no-delta loop. Forward
+            # the exception (the Wait envelope below converts it to
+            # an operator_required signal).
+            raise _ProgramOperatorDirectionRequiredError(str(exc)) from exc
         if no_active_work is not None and isinstance(exc, no_active_work):
             raise _ProgramNoActiveWorkError(str(exc)) from exc
         if roadmap_parse is not None and isinstance(exc, roadmap_parse):
