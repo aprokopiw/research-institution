@@ -148,8 +148,8 @@ A cold-start wrapper is also exposed as
 ## Cross-references
 
 - `@ADR-0006` — research-institution owns only catalog + bootstrap + green gate + dispatcher.
-- `@INV-0091` — mathlint does not ship program launchers.
-- `@INV-0092` — pi_monitor does not name mathlint.
+- `@ADR-0091` — mathlint does not ship program launchers (math side).
+- `@ADR-0001` — pi_monitor source-owns-domain-meaning (pi_monitor side).
 - `@INV-0093` — institution green gate is the canonical wiring evidence.
 - `@TOOL003` — math-engine invariant: live preflight requires `shadow_mode = false`.
 - `docs/operations/dispatcher-cli-reference.md` — full CLI reference.
