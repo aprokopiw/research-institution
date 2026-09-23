@@ -25,7 +25,7 @@ evidence.
 | **V3** | deep adversarial assurance (mutation, property, fuzz) | partial: property tests for entry-point parser; staleness-boundary oracle for status; mutation survival tests | PARTIAL |
 | **V4** | system / release assurance (clean-install, live-mode wiring) | `bash green-gate/check-institution.sh --live` (operator-only) | BLOCKED without operator creds; hermetic variant under `RESEARCH_INSTITUTION_HERMETIC=1` |
 
-### V0 — repo-boundary static checks (BC-1, BC-4)
+### V0 — repo-boundary static checks (BC-1, BC-4, BC-5)
 
 **BC-1 (math):** `tests/static/test_no_program_named_modules_in_tests.py`
 scans `math/tests/` + `math/scripts/` for program-name literals
@@ -36,13 +36,26 @@ modules) and `@ADR-0091` (mathlint does not ship program
 launchers). A grandfather list documents each remaining
 literal with a retirement path.
 
-**BC-4 (pi_monitor):** `tests/static/test_no_program_identity_in_fixtures.py`
+**BC-4 (pi_monitor tests):** `tests/static/test_no_program_identity_in_fixtures.py`
 scans `pi_monitor/tests/` for the same literals. Violations
 mean pi_monitor's test fixtures hardcode a specific program
 identity, violating `@ADR-0092` (pi_monitor does not name
 mathlint). The `mathlint_fixture/` contract bundle is
 grandfathered because those tests intentionally exercise the
-mathlint protocol.
+mathlint protocol; the `tests/static/` directory is also
+exempt (sibling static checks enumerate the namespaces they
+scan for, so cross-flagging would defeat the purpose).
+
+**BC-5 (pi_monitor src/):** `tests/static/test_no_program_identity_in_src.py`
+scans `pi_monitor/src/` for the same literals. The
+sibling of BC-4 for the published library surface. No
+grandfather list: a program-identity literal under `src/`
+is a code smell; the fix is to refactor (extract a generic
+term, move the example to a docstring outside `src/`,
+etc.), not to grandfather. Violations here mean
+pi_monitor's stable surface hardcodes a specific program
+identity — the same `@ADR-0092` violation, but on the
+side the operator actually ships.
 
 **Hermetic coverage:** both checks are runnable without
 network/credentials and pass under `RESEARCH_INSTITUTION_HERMETIC=1`.
