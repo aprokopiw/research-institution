@@ -18,13 +18,19 @@ After step 4, you have the full picture. For deeper work:
 | If you want to... | Read this |
 |-------------------|-----------|
 | Launch kaplansky | [`operations/launch-kaplansky-autonomously.md`](operations/launch-kaplansky-autonomously.md) |
+| Quickstart (5-min tour) | [`operations/research-institution-quickstart.md`](operations/research-institution-quickstart.md) |
 | Bootstrap from a fresh clone | [`operations/bootstrap-and-cold-start.md`](operations/bootstrap-and-cold-start.md) |
 | Understand the architecture-review gate | [`operations/architecture-review-gate.md`](operations/architecture-review-gate.md) |
 | Use the dispatcher CLI | [`operations/dispatcher-cli-reference.md`](operations/dispatcher-cli-reference.md) |
 | Debug a stuck live supervisor | [`operations/pi-monitor-debug-logging.md`](operations/pi-monitor-debug-logging.md) |
 | Understand the wire contracts | [`operations/wire-contracts.md`](operations/wire-contracts.md) |
+| Configure `local-pi-monitor.toml` | [`operations/pi-monitor-config-reference.md`](operations/pi-monitor-config-reference.md) |
+| Diagnose an operator-side failure | [`operations/research-institution-troubleshooting.md`](operations/research-institution-troubleshooting.md) |
 | Run the verification gates | [`operations/verification-gates.md`](operations/verification-gates.md) |
 | Fix the no-delta loop | [`operations/plan-013-live-supervisor-authority.md`](operations/plan-013-live-supervisor-authority.md) |
+| Read the post-ship trace for plan-013 | [`operations/plan-013-closure-audit.md`](operations/plan-013-closure-audit.md) |
+| Read the kaplansky operator UX | [`operations/kaplansky-operator-ux.md`](operations/kaplansky-operator-ux.md) |
+| Plan test hardening (roadmap) | [`operations/test-hardening-plan.md`](operations/test-hardening-plan.md) |
 | Apply math's decisions to the roadmap | [`operations/architecture-review-gate.md`](operations/architecture-review-gate.md) (the rare `--skip-gate` escape hatch) |
 
 ## The test-locality decision tree
