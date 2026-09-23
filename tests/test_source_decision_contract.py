@@ -299,6 +299,7 @@ def test_plan_013_wait_envelope_parses_with_new_reason_code() -> None:
 def test_plan_013_dispatch_envelope_parses_with_new_reason_code() -> None:
     """``Dispatch(reason_code='architecture_review_dispatch', ...)`` parses cleanly."""
     from research_institution.contracts.source_decision import (
+        PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH,
         REASON_ARCHITECTURE_REVIEW_DISPATCH,
     )
     env = _minimal_envelope(
@@ -316,7 +317,7 @@ def test_plan_013_dispatch_envelope_parses_with_new_reason_code() -> None:
                 "operation_kind": "mathlint-research",
                 "role": "maintenance",
                 "workspace": "workspace",
-                "payload": {"math_directive_content_hash": "sha256:..."},
+                "payload": {PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH: "sha256:..."},
                 "execution_policy": {},
                 "session_policy": {},
                 "isolation": {},
@@ -330,7 +331,7 @@ def test_plan_013_dispatch_envelope_parses_with_new_reason_code() -> None:
     assert isinstance(parsed, Dispatch)
     assert parsed.reason_code == REASON_ARCHITECTURE_REVIEW_DISPATCH
     assert parsed.work[0].role == "maintenance"
-    assert "math_directive_content_hash" in parsed.work[0].payload
+    assert PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH in parsed.work[0].payload
 
 
 def test_mathlint_decide_next_envelope_parses() -> None:

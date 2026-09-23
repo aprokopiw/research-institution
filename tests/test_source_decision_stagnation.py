@@ -11,7 +11,7 @@ These tests pin:
 1. **0/1/2/3 no-delta cases** in the four
    ``LiveSourceSnapshot.verdict_kind`` shapes.
 2. **Role-aware payload compilation**:
-   ``WorkRequest.payload["math_directive_content_hash"]`` is
+   ``WorkRequest.payload[PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH]`` is
    the byte-stable output of math's
    ``compute_directive_content_hash(compile_*_directive(...))``.
 3. **Wire discipline**: the ``role`` field stays inside
