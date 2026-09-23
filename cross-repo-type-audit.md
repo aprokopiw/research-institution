@@ -50,18 +50,18 @@ The operator's rule for cross-repo imports, as of this session:
 
 ### Verification against the current codebase
 
-| Repo | Imports | Allowed by rule? | Status |
-|---|---|---|---|
-| `pi_monitor/src/` | `^(from\|import) (mathlint\|math\|research_institution\|kaplansky)\b` → **0 matches** | yes | ✅ clean |
-| `math/src/` | `from pi_monitor.work.work_source import DecisionKind` (4 sites) | yes | ✅ clean |
-| `math/src/` | `from pi_monitor.protocol.*` → 0; `from research_institution.*` → 0; `from kaplansky.*` → 0 | yes | ✅ clean |
-| `kaplansky/src/` | `from mathlint.*` (15+ sites — `mathlint.orchestration`, `mathlint.models`, `mathlint.program_providers`, `mathlint.research_state_api`, `mathlint.autonomous_supervisor`, …) | yes | ✅ clean |
-| `kaplansky/src/` | `from pi_monitor.work.work_source import DecisionKind` (`launcher/verify.py:31`) | **no** | ❌ **VIOLATION** |
-| `kaplansky/src/` | `from pi_monitor.work.work_source import SourceRevision, WorkRequest` (`work_selection.py:47`) | **no** | ❌ **VIOLATION** |
-| `kaplansky/tests/` | `from pi_monitor.work.work_source import SourceRevision, WorkRequest` (`test_work_selection.py:36`) | **no** | ❌ **VIOLATION** |
-| `research-institution/research_institution/` | `from mathlint.*` (4 sites in `providers/`, `dispatcher.py`, `tests/conftest.py`) | yes | ✅ clean |
-| `research-institution/research_institution/` | `from pi_monitor.*` (4 sites — `supervisor.py`, `contracts/source_decision.py`, `status.py`) | yes | ✅ clean |
-| `research-institution/tests/` | `from mathlint.*` and `from pi_monitor.*` (multiple sites — testing the composition) | yes | ✅ clean |
+| Repo | Imports | Allowed by rule? | Status | Resolution |
+|---|---|---|---|---|
+| `pi_monitor/src/` | `^(from\|import) (mathlint\|math\|research_institution\|kaplansky)\b` → **0 matches** | yes | ✅ clean | n/a |
+| `math/src/` | `from pi_monitor.work.work_source import DecisionKind` (4 sites) | yes | ✅ clean | n/a |
+| `math/src/` | `from pi_monitor.protocol.*` → 0; `from research_institution.*` → 0; `from kaplansky.*` → 0 | yes | ✅ clean | commit `a207044` retired the TYPE_CHECKING-only `research_institution.*` imports |
+| `kaplansky/src/` | `from mathlint.*` (15+ sites — `mathlint.orchestration`, `mathlint.models`, `mathlint.program_providers`, `mathlint.research_state_api`, `mathlint.autonomous_supervisor`, …) | yes | ✅ clean | n/a |
+| `kaplansky/src/` | `from pi_monitor.work.work_source import DecisionKind` (`launcher/verify.py:31`) | **no** | ❌ **VIOLATION** → ✅ | commit `b56d2f2` — replaced with `from mathlint.protocol.wire_types import DecisionKind` |
+| `kaplansky/src/` | `from pi_monitor.work.work_source import SourceRevision, WorkRequest` (`work_selection.py:47`) | **no** | ❌ **VIOLATION** → ✅ | commit `b56d2f2` — replaced with `from mathlint.protocol.wire_types import SourceRevision, WorkRequest` |
+| `kaplansky/tests/` | `from pi_monitor.work.work_source import SourceRevision, WorkRequest` (`test_work_selection.py:36`) | **no** | ❌ **VIOLATION** → ✅ | commit `b56d2f2` — replaced via math facade |
+| `research-institution/research_institution/` | `from mathlint.*` (4 sites in `providers/`, `dispatcher.py`, `tests/conftest.py`) | yes | ✅ clean | n/a |
+| `research-institution/research_institution/` | `from pi_monitor.*` (4 sites — `supervisor.py`, `contracts/source_decision.py`, `status.py`) | yes | ✅ clean | n/a |
+| `research-institution/tests/` | `from mathlint.*` and `from pi_monitor.*` (multiple sites — testing the composition) | yes | ✅ clean | n/a |
 
 **Summary:**
 - pi_monitor: ✅ 0 imports of any project. **Holds the rule.**
