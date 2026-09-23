@@ -526,19 +526,26 @@ This audit document lives at the repo root: `research-institution/cross-repo-typ
 - `math/tests/static/test_no_program_named_modules.py` — math src/ has no program-name literals (BC-1 part 1).
 - `math/tests/static/test_no_program_named_modules_in_tests.py` — math tests/scripts have no program-name literals (BC-1 part 2).
 - `pi_monitor/tests/static/test_no_program_identity_in_fixtures.py` — pi_monitor tests have no program-identity literals (BC-4).
-- `research-institution/research_institution/gates/aggregate.py::_repo_boundary_check` — runs both checks; reports `[repo-boundary] ok` or RED.
+- `research-institution/research_institution/gates/aggregate.py::_repo_boundary_check` — runs BC-1 (math tests/scripts) + BC-4 (pi_monitor tests) + BC-5 (pi_monitor src/); reports `[repo-boundary] ok` or RED.
 
-The `@ADR-0092` Literals in `work_source.py:173-179, 194-198` are *not* currently caught by any static check — the existing `test_no_program_identity_in_fixtures.py` only scans `pi_monitor/tests/`, not `pi_monitor/src/`. A new BC-5 static check is proposed below.
+`@ADR-0092` Literals on the pi_monitor side (in src/, tests/, and the wire-envelope docstrings) are now caught by the BC-4 + BC-5 pair: BC-4 scans `pi_monitor/tests/` and BC-5 scans `pi_monitor/src/`. Before BC-5 landed (commit `94e1576`), the Literals in `work_source.py:173-179, 194-198` were not caught by any static check — that gap is now closed.
 
-### Proposed new static check (BC-5)
+### Static check (BC-5) — shipped
 
-Add `pi_monitor/tests/static/test_no_program_identity_in_src.py`. It scans `pi_monitor/src/` for:
-- `Literal["...kaplansky..."]`, `Literal["...mathlint..."]`, `Literal["...research_institution..."]`
-- Any project-name identifier or string literal in src/
+The proposed BC-5 static check landed in commit `94e1576`
+(pi_monitor) + commit `1de8a6f` (research-institution). It
+scans `pi_monitor/src/` for any program-identity literal
+(`kaplansky`, `riemann`, `navier_stokes`, etc.) — code,
+docstrings, comments, and config files (`.py`, `.toml`,
+`.md`, `.txt`). No grandfather list: a program-identity
+literal under `src/` is a code smell; the fix is to
+refactor (extract a generic term, move the example to a
+docstring outside `src/`, etc.), not to grandfather.
 
-Grandfather list: the static check itself; the docstring citation sites that are still being scrubbed in commit 2.
-
-This check is the durable enforcement of `@ADR-0092` going forward. After commits 2 + BC-5 land, any future reintroduction of program literals in pi_monitor src fails CI.
+This check is the durable enforcement of `@ADR-0092`
+going forward. After commits 2 + BC-5 land, any future
+reintroduction of program literals in pi_monitor src
+fails CI.
 
 ---
 
