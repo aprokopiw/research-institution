@@ -246,6 +246,93 @@ def test_canonical_reason_codes_is_frozen() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Plan-013 OS-side reason-code additions.
+# ---------------------------------------------------------------------------
+
+
+def test_plan_013_os_reason_codes_present() -> None:
+    """``REASON_ARCHITECTURE_REVIEW_REQUIRED`` and ``REASON_ARCHITECTURE_REVIEW_DISPATCH``
+    are the documented OS-side extensions; they ride along on the existing
+    ``reason_code: str`` wire field.
+    """
+    from research_institution.contracts.source_decision import (
+        EXTENDED_REASON_CODES,
+        OS_EXTENDED_REASON_CODES,
+        REASON_ARCHITECTURE_REVIEW_DISPATCH,
+        REASON_ARCHITECTURE_REVIEW_REQUIRED,
+    )
+    assert REASON_ARCHITECTURE_REVIEW_REQUIRED == "architecture_review_required"
+    assert REASON_ARCHITECTURE_REVIEW_DISPATCH == "architecture_review_dispatch"
+    assert {
+        REASON_ARCHITECTURE_REVIEW_REQUIRED,
+        REASON_ARCHITECTURE_REVIEW_DISPATCH,
+    } == OS_EXTENDED_REASON_CODES
+    assert (
+        EXTENDED_REASON_CODES
+        == (CANONICAL_REASON_CODES | OS_EXTENDED_REASON_CODES)
+    )
+
+
+def test_plan_013_wait_envelope_parses_with_new_reason_code() -> None:
+    """``Wait(reason_code='architecture_review_required', ...)`` parses cleanly."""
+    from research_institution.contracts.source_decision import (
+        REASON_ARCHITECTURE_REVIEW_REQUIRED,
+    )
+    env = _minimal_envelope(
+        "wait",
+        reason=(
+            "stagnation_session_count=2 on op-K4; "
+            "horizon admission pending; supervisor re-decides on source change"
+        ),
+        reason_code=REASON_ARCHITECTURE_REVIEW_REQUIRED,
+        wake_on_source_change=True,
+        retry_after_seconds=300.0,
+    )
+    parsed = parse_source_decision(env)
+    assert isinstance(parsed, Wait)
+    assert parsed.reason_code == REASON_ARCHITECTURE_REVIEW_REQUIRED
+    assert parsed.wake_on_source_change is True
+    assert parsed.retry_after_seconds == 300.0
+
+
+def test_plan_013_dispatch_envelope_parses_with_new_reason_code() -> None:
+    """``Dispatch(reason_code='architecture_review_dispatch', ...)`` parses cleanly."""
+    from research_institution.contracts.source_decision import (
+        REASON_ARCHITECTURE_REVIEW_DISPATCH,
+    )
+    env = _minimal_envelope(
+        "dispatch",
+        reason=(
+            "math kernel authorized architect round for K4; "
+            "directive_content_hash=sha256:..."
+        ),
+        reason_code=REASON_ARCHITECTURE_REVIEW_DISPATCH,
+        work=[
+            {
+                "source_identity": "research-program",
+                "source_revision": {"fingerprint": "abc", "observed_unix": 1.0},
+                "operation_id": "work.kaplansky.K4",
+                "operation_kind": "mathlint-research",
+                "role": "maintenance",
+                "workspace": "workspace",
+                "payload": {"math_directive_content_hash": "sha256:..."},
+                "execution_policy": {},
+                "session_policy": {},
+                "isolation": {},
+                "budget": {},
+                "execution_profile": "",
+                "lease_until_unix": None,
+            }
+        ],
+    )
+    parsed = parse_source_decision(env)
+    assert isinstance(parsed, Dispatch)
+    assert parsed.reason_code == REASON_ARCHITECTURE_REVIEW_DISPATCH
+    assert parsed.work[0].role == "maintenance"
+    assert "math_directive_content_hash" in parsed.work[0].payload
+
+
 def test_mathlint_decide_next_envelope_parses() -> None:
     """The exact envelope shape `real_source.decide_next` returns.
 

@@ -106,6 +106,8 @@ from mathlint.program_providers import (
 # pi_monitor's dataclasses by identity (no mirror) so isinstance
 # and dataclass equality hold across the institution boundary.
 from research_institution.contracts.source_decision import (
+    REASON_ARCHITECTURE_REVIEW_DISPATCH,
+    REASON_ARCHITECTURE_REVIEW_REQUIRED,
     REASON_NO_ELIGIBLE_WORK,
     REASON_WAIT_REQUESTED,
     REASON_WORK_AVAILABLE,
@@ -308,6 +310,27 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
          OR has no entry-point-registered work-selection callable,
          the OS emits a Wait with a clear diagnostic naming only
          the *catalog key* (not the program python module).
+      7. **NEW (plan-013):** When the program returns work and
+         ``repository`` is a mathlint project, the OS consults math's
+         stagnation triggers + scheduler verdict via
+         ``mathlint.orchestration.live_source_snapshot.consult(math_project, candidate, t)``.
+         The wrapper's typed ``LiveSourceSnapshot.verdict_kind``
+         (one of ``DISPATCH_RESEARCH``, ``DISPATCH_ARCHITECT``,
+         ``ARCHITECTURE_REVIEW_REQUIRED``, ``NO_ELIGIBLE_WORK``) is
+         translated into the existing ``Dispatch`` / ``Wait``
+         envelope. The translation table is the canonical authority
+         for the no-delta loop fix; see ``@ADR-0011``.
+      8. **Wire discipline:** the wrapper's directive hashes ride on
+         ``WorkRequest.payload`` as opaque fields; the wire
+         ``role`` is overridden via ``dataclasses.replace(...)`` to
+         one of pi_monitor's existing 8 ``RoleName`` values
+         (``research`` / ``maintenance`` / ...) so the wire schema
+         is byte-identical to pre-plan-013.
+      9. **Failure modes:** If the repository is not a mathlint
+         project (``MathProject.load`` raises), the OS falls back to
+         existing dispatch behavior (steps 4–5). If the consult raises
+         ``StaleSourceRevision``, the OS emits
+         ``Wait(reason_code="stale_source_revision", ...)``.
 
     The return type is the typed dispatch envelope's discriminated
     union (``Dispatch | Wait``); pyright enforces the required field
@@ -382,12 +405,207 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
             retry_after_seconds=60.0,
         )
     label_summary = ", ".join(req.operation_id for req in work)
+    # ------------------------------------------------------------------
+    # NEW (plan-013): consult math's view of the world, then translate
+    # the verdict into the existing ``Dispatch`` / ``Wait`` envelope.
+    # The consult is read-only; if ``repository`` is not a mathlint
+    # project, fall back to the existing dispatch behavior.
+    # ------------------------------------------------------------------
+    consult_decision = _consult_math_and_translate(
+        repository=repository,
+        work=work,
+        observed_unix=observed,
+        label_summary=label_summary,
+    )
+    if consult_decision is not None:
+        return consult_decision
     return Dispatch(
         source_revision=source_revision,
         decided_unix=observed,
         work=work,
         reason_code=REASON_WORK_AVAILABLE,
         reason=f"dispatching {len(work)} active item(s) from proof program: {label_summary}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plan-013: consult-and-translate step.
+# ---------------------------------------------------------------------------
+
+
+def _consult_math_and_translate(
+    *,
+    repository: Path,
+    work: list[WorkRequest],
+    observed_unix: float,
+    label_summary: str,
+) -> Dispatch | Wait | None:
+    """Consult math's verdict on the candidate ``work`` and translate.
+
+    Returns ``None`` to signal "fall back to the existing dispatch
+    behavior"; otherwise returns the typed ``Dispatch`` / ``Wait``
+    the consult-and-translate table produced.
+
+    The verdict_kind -> SourceDecision table per @ADR-0011:
+
+      ``DISPATCH_RESEARCH``           → Dispatch(role="research",
+                                          reason_code="work_available")
+      ``DISPATCH_ARCHITECT``          → Dispatch(role="maintenance",
+                                          reason_code="architecture_review_dispatch")
+      ``ARCHITECTURE_REVIEW_REQUIRED`` → Wait(reason_code="architecture_review_required",
+                                              wake_on_source_change=True,
+                                              retry_after_seconds=300)
+      ``NO_ELIGIBLE_WORK``            → Wait(reason_code="no_eligible_work",
+                                              wake_on_source_change=True,
+                                              retry_after_seconds=60)
+
+    The wire `role` values stay inside pi_monitor's existing 8-value
+    ``RoleName`` Literal (default | primary | supporting | milestone |
+    research | intake | review | maintenance). The math-internal
+    ``MATHEMATICAL_RESEARCHER`` / ``MATHEMATICAL_ARCHITECT``
+    ``RoleProfileName`` values are NEVER placed on the wire.
+    """
+    import dataclasses
+
+    try:
+        from mathlint.project import MathProject
+    except ImportError:
+        return None
+    try:
+        math_project = MathProject.load(start=repository)
+    except (FileNotFoundError, OSError, ValueError, RuntimeError):
+        # Not a mathlint project, or load failed; fall back to
+        # existing dispatch behavior.
+        return None
+
+    try:
+        from mathlint.orchestration.live_source_snapshot import (
+            LiveSourceSnapshot,
+            StaleSourceRevision,
+            consult,
+        )
+    except ImportError:
+        return None
+
+    candidate = work[0]
+    try:
+        snapshot: LiveSourceSnapshot = consult(
+            math_project=math_project,
+            candidate=candidate,
+            source_revision_unix=observed_unix,
+        )
+    except StaleSourceRevision:
+        return Wait(
+            source_revision=candidate.source_revision,
+            decided_unix=observed_unix,
+            reason_code=REASON_WAIT_REQUESTED,
+            reason=(
+                "math source-snapshot reported a stale source revision; "
+                "the supervisor will re-decide on a fresh tick"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=30.0,
+        )
+
+    verdict = snapshot.verdict_kind
+
+    if verdict == "ARCHITECTURE_REVIEW_REQUIRED":
+        return Wait(
+            source_revision=candidate.source_revision,
+            decided_unix=observed_unix,
+            reason_code=REASON_ARCHITECTURE_REVIEW_REQUIRED,
+            reason=(
+                f"stagnation_session_count={snapshot.stagnation_session_count} "
+                f"on op-{snapshot.target}; horizon admission pending; "
+                "supervisor re-decides on source change"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=300.0,
+        )
+
+    if verdict == "NO_ELIGIBLE_WORK":
+        return Wait(
+            source_revision=candidate.source_revision,
+            decided_unix=observed_unix,
+            reason_code=REASON_NO_ELIGIBLE_WORK,
+            reason=(
+                f"math kernel reports no eligible work for op-{snapshot.target}; "
+                "supervisor re-decides on source change"
+            ),
+            wake_on_source_change=True,
+            retry_after_seconds=60.0,
+        )
+
+    if verdict == "DISPATCH_RESEARCH":
+        # Override the wire ``role`` to ``research`` (existing wire value),
+        # inject the directive content hash as an opaque payload field.
+        new_work = [
+            dataclasses.replace(
+                req,
+                role="research",
+                payload={
+                    **req.payload,
+                    "math_directive_content_hash": snapshot.directive_content_hash,
+                    "math_directive_template_hash": snapshot.directive_template_hash,
+                    "stagnation_session_count": snapshot.stagnation_session_count,
+                    "math_target": snapshot.target,
+                },
+            )
+            for req in work
+        ]
+        return Dispatch(
+            source_revision=candidate.source_revision,
+            decided_unix=observed_unix,
+            work=new_work,
+            reason_code=REASON_WORK_AVAILABLE,
+            reason=(
+                f"math kernel authorized researcher round for "
+                f"{label_summary}; directive_content_hash="
+                f"{snapshot.directive_content_hash[:16]}..."
+            ),
+        )
+
+    if verdict == "DISPATCH_ARCHITECT":
+        new_work = [
+            dataclasses.replace(
+                req,
+                role="maintenance",
+                payload={
+                    "math_directive_content_hash": snapshot.directive_content_hash,
+                    "math_directive_template_hash": snapshot.directive_template_hash,
+                    "stagnation_session_count": snapshot.stagnation_session_count,
+                    "math_target": snapshot.target,
+                    "previous_payload": req.payload,
+                },
+            )
+            for req in work
+        ]
+        return Dispatch(
+            source_revision=candidate.source_revision,
+            decided_unix=observed_unix,
+            work=new_work,
+            reason_code=REASON_ARCHITECTURE_REVIEW_DISPATCH,
+            reason=(
+                f"math kernel authorized architect round for "
+                f"{label_summary}; directive_content_hash="
+                f"{snapshot.directive_content_hash[:16]}..."
+            ),
+        )
+
+    # Defensive: any verdict the wrapper emits that isn't in the
+    # translation table. Today the wrapper emits only the four
+    # values above; if a new one is added without a translation it
+    # lands here.
+    return Wait(
+        source_revision=candidate.source_revision,
+        decided_unix=observed_unix,
+        reason_code=REASON_WAIT_REQUESTED,
+        reason=(
+            f"unknown math verdict_kind={verdict!r} on op-{snapshot.target}; "
+            "supervisor re-decides on source change"
+        ),
+        wake_on_source_change=True,
+        retry_after_seconds=60.0,
     )
 
 

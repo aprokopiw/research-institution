@@ -192,7 +192,7 @@ Already drafted in this session:
 | `docs/operations/plan-013-live-supervisor-authority.md` | This document. | (this file) |
 | `docs/semantic/adr/cross-repo-requests/adr-0011-stagnation-handling-is-a-source-decision.md` | The durable cross-repo ADR. Explicitly supersedes `@ADR-0009`. | 11.5K |
 | `docs/semantic/invariants/inv-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult.md` | The durable invariant; cites the live evidence (`750d7954…` execution file, `aae2f6d5…` ×4 outcome digest). | 7.3K |
-| `docs/semantic/contracts/ctr-0095-live-source-snapshot-contract.md` | The math-side `consult_work_source_snapshot` typed contract: signature, four-verdict vocabulary, purity/no-mutation guarantees, version-discipline via `@CTR-0021`. | 9.7K |
+| `docs/semantic/contracts/ctr-0095-live-source-snapshot-contract.md` | The math-side `consult(...)` typed contract: signature, four-verdict vocabulary, purity/no-mutation guarantees, version-discipline via `@CTR-0021`. | 9.7K |
 | `docs/semantic/adr/cross-repo-requests/adr-0009-pi-monitor-supervisor-side-repeat-circuit.md` | Modified: status flipped to `superseded`, body annotated. | 17 lines added |
 | `docs/semantic/SEMANTIC_REGISTRY.md` | Modified: index entries for the four new anchors + the cross-repo-request subdirectory split. | 13 lines added |
 
@@ -200,19 +200,21 @@ Already drafted in this session:
 
 ### 2.2 — PR-B (math, ~150 LOC): the consult adapter
 
-One new file `mathlint/orchestration/live_source_snapshot.py` (~50 LOC):
+One new file `mathlint/orchestration/live_source_snapshot.py` (~50 LOC of pure code + 6-line boundary header; ~330 LOC with docstring):
 
 ```python
-def consult_work_source_snapshot(
-    repository: Path,
+def consult(
+    math_project: MathProject,
     candidate: WorkRequest,
-    source_revision: SourceRevision,
+    source_revision_unix: float,
+    *,
+    max_staleness_seconds: float = 60.0,
 ) -> LiveSourceSnapshot:
-    """Read-only consultation.
+    """Read-only consultation. Pure over its arguments.
 
-    Reads:
-      - mathlint.deltas.stagnation_triggers(repository)
-      - mathlint.scheduler.select_global_action(scheduler_project_for(repository, candidate))
+    Reads (read-only):
+      - mathlint.deltas.stagnation_trigger(math_project.root, candidate.operation_id)
+      - mathlint.scheduler.select_global_action(math_project)
       - mathlint.exchange.directives.compile_mathematical_directive(role, request, query)
       - mathlint.exchange.directives.compile_architecture_directive(role, request, query)
 
@@ -417,7 +419,8 @@ page) explaining:
 - The two paths use different `WorkSource` adapters (the
   live path uses `real_source.configured_provider`; the
   iteration path uses a different in-process adapter).
-- The plan-013 wrapper (`consult_work_source_snapshot`)
+- The plan-013 wrapper
+  (`mathlint.orchestration.live_source_snapshot.consult`)
   is the **bridge** that makes the live path consult
   math's verdict without running the math-side supervisor
   cycle.
@@ -446,7 +449,7 @@ page) covering all four points, citing `@ADR-0011`,
 
 **Defect:** A fresh agent looking for "where do plan-013's
 acceptance tests go?" has to `rg` for `stagnation`,
-`architecture_review`, `consult_work_source_snapshot`
+`architecture_review`, `consult(...)`
 across `tests/` to find the right test file. The test
 directory layout doesn't expose the right entry point.
 

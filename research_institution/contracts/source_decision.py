@@ -42,7 +42,7 @@ typed envelopes through the wire boundary.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pi_monitor.protocol.wire_models import (
     SourceDecisionWireModel as SourceDecisionWireDict,
@@ -86,16 +86,85 @@ from pi_monitor.work.work_source import (
 # ``pi_monitor.work.work_source`` and this module re-exports the names.
 # ---------------------------------------------------------------------------
 
-#: Re-export of the closed canonical reason-code set. ``frozenset[Literal[...]]``
-#: is structurally compatible with ``frozenset[str]`` so downstream code
-#: that annotated against the legacy type still typechecks.
+# ---------------------------------------------------------------------------
+# Plan-013 (no-delta loop fix) additions.
+#
+# These two reason codes ride along on the existing ``reason_code: str``
+# field — the wire schema is byte-identical to pre-plan-013. They are
+# not yet inside pi_monitor's ``CanonicalReasonCode`` Literal because
+# plan-013 ships without touching pi_monitor; research-institution
+# emits them and the supervisor's wire codec accepts them as opaque
+# strings. Per @CTR-0001's forward-compat note, codes outside the
+# canonical set are tolerated by the supervisor and flagged by the
+# paired-receipt verifier for the operator. A future math-maintainer
+# review may extend pi_monitor's Literal to include these; the
+# research-institution contracts module is the documented home for
+# plan-013 reason codes regardless.
+# ---------------------------------------------------------------------------
+
+#: ``Wait`` reason when the kernel's stagnation trigger has fired on
+#: the candidate ``operation_id`` but the architecture-review horizon
+#: admission has not yet completed. The supervisor emits this once 2+
+#: consecutive no-delta outcomes accumulate against the same target.
+REASON_ARCHITECTURE_REVIEW_REQUIRED: Final[str] = "architecture_review_required"
+
+#: ``Dispatch`` reason when the kernel emits ``DISPATCH_ARCHITECT``
+#: (admission complete; architect round mid-flight). The wire
+#: ``role`` is overridden to ``"maintenance"`` (a value already in
+#: pi_monitor's wire ``RoleName`` Literal) so the wire schema stays
+#: byte-identical.
+REASON_ARCHITECTURE_REVIEW_DISPATCH: Final[str] = "architecture_review_dispatch"
+
+#: Re-export of the closed canonical reason-code set. Kept byte-equal
+#: to pi_monitor's wire-authority set so the cross-repo parity test
+#: in ``tests/test_cross_repo_type_identity.py`` stays green. The
+#: plan-013 OS-side additions live in :data:`OS_EXTENDED_REASON_CODES`
+#: below; both sets together are the documented OS reason-code union.
 CANONICAL_REASON_CODES: frozenset[str] = _PM_CANONICAL_REASON_CODES
+
+#: Plan-013 OS-side reason-code additions. These ride along on the
+#: existing ``reason_code: str`` field — the wire schema is byte-
+#: identical to pre-plan-013 because pi_monitor's wire codec accepts
+#: any string. They are documented in this module until a future
+#: math-maintainer review lifts them into pi_monitor's wire Literal
+#: under ``@CTR-0021-wire-protocol-version-pinned``.
+OS_EXTENDED_REASON_CODES: frozenset[str] = frozenset(
+    {
+        REASON_ARCHITECTURE_REVIEW_REQUIRED,
+        REASON_ARCHITECTURE_REVIEW_DISPATCH,
+    }
+)
+
+#: Combined OS reason-code union (pi_monitor's canonical set plus
+#: the plan-013 OS-side additions). The dispatcher accepts reasons
+#: from this combined set; the supervisor's wire codec accepts any
+#: string per ``@CTR-0001`` forward-compat.
+EXTENDED_REASON_CODES: frozenset[str] = (
+    CANONICAL_REASON_CODES | OS_EXTENDED_REASON_CODES
+)
 
 #: Closed reason-code vocabulary as a Literal type. Re-export of
 #: :data:`pi_monitor.work.work_source.CanonicalReasonCode` so the strict
 #: pyright config turns unknown reason_codes into a compile-time
 #: error at any call site that declares ``reason_code: CanonicalReasonCode``.
 CanonicalReasonCode = PM_CanonicalReasonCode
+
+#: Workload-side role alias for plan-013 dispatch paths. The
+#: ``RoleName`` field is pi_monitor's wire vocabulary; plan-013 only
+#: emits a NARROWING subset (``research`` / ``maintenance`` /
+#: ``primary`` / ``supporting`` / ``default``) so a typo at the OS
+#: composition root is caught at the import boundary. The 5
+#: wire-allowed values are the ones the OS actually injects on the
+#: ``dataclasses.replace(candidate, role=...)`` path. Other wire values
+#: (``intake``, ``review``, ``milestone``) are not used by plan-013;
+#: reserving them for future plan-* work keeps the Literal closed.
+WorkRequestRoleAlias = Literal[
+    "research",
+    "maintenance",
+    "primary",
+    "supporting",
+    "default",
+]
 
 #: ``kind`` discriminator StrEnum. Re-export of
 #: :class:`pi_monitor.work.work_source.DecisionKind`. This is the
@@ -448,10 +517,16 @@ def decision_kind(decision: SourceDecision) -> DecisionKind:
 
 __all__ = [
     "CANONICAL_REASON_CODES",
+    "CanonicalReasonCode",
+    "EXTENDED_REASON_CODES",
+    "OS_EXTENDED_REASON_CODES",
     "DecisionKind",
     "DecisionKindLiteral",
     "Dispatch",
+    "OperationKind",
     "OperatorRequired",
+    "REASON_ARCHITECTURE_REVIEW_DISPATCH",
+    "REASON_ARCHITECTURE_REVIEW_REQUIRED",
     "REASON_BLOCKED_WORK_PRESENT",
     "REASON_FRONTIER_EXHAUSTED",
     "REASON_NO_ELIGIBLE_WORK",
@@ -460,8 +535,10 @@ __all__ = [
     "REASON_WAIT_REQUESTED",
     "REASON_WORK_AVAILABLE",
     "ReasonCodeLiteral",
+    "RoleName",
     "SourceDecision",
     "SourceDecisionWireDict",
+    "SourceIdentity",
     "SourceRevision",
     "SourceRevisionWireDict",
     "Stop",
@@ -472,7 +549,9 @@ __all__ = [
     "TypedWorkRequestPayload",
     "Wait",
     "WorkRequest",
+    "WorkRequestRoleAlias",
     "WorkRequestWireDict",
+    "WorkspaceName",
     "decision_kind",
     "parse_source_decision",
     "parse_work_request_envelopes",

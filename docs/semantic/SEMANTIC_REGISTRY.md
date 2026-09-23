@@ -59,6 +59,7 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 |--------|----------|------------------|
 | `@ADR-0014` | `math/docs/semantic/adr/` | mathlint does not import program-named modules |
 | `@ADR-0091` | `math/docs/semantic/adr/` | mathlint does not ship program launchers |
+| `@ADR-0097` | `math/docs/semantic/adr/` | live source snapshot — consult adapter exposing the kernel to the live source-decision flow (plan-013 sibling) |
 | `@INV-0006` | `math/docs/semantic/invariants/` | (math) |
 | `@INV-0093` | `math/docs/semantic/invariants/` | (math; superset of institution's INV-0093) |
 
