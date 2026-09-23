@@ -106,6 +106,11 @@ from mathlint.program_providers import (
 # pi_monitor's dataclasses by identity (no mirror) so isinstance
 # and dataclass equality hold across the institution boundary.
 from research_institution.contracts.source_decision import (
+    PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH,
+    PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH,
+    PAYLOAD_KEY_MATH_TARGET,
+    PAYLOAD_KEY_PREVIOUS_PAYLOAD,
+    PAYLOAD_KEY_STAGNATION_SESSION_COUNT,
     REASON_ARCHITECTURE_REVIEW_DISPATCH,
     REASON_ARCHITECTURE_REVIEW_REQUIRED,
     REASON_NO_ELIGIBLE_WORK,
@@ -480,6 +485,10 @@ def _consult_math_and_translate(
 
     try:
         from mathlint.orchestration.live_source_snapshot import (
+            VERDICT_ARCHITECTURE_REVIEW_REQUIRED,
+            VERDICT_DISPATCH_ARCHITECT,
+            VERDICT_DISPATCH_RESEARCH,
+            VERDICT_NO_ELIGIBLE_WORK,
             LiveSourceSnapshot,
             StaleSourceRevision,
             consult,
@@ -509,7 +518,7 @@ def _consult_math_and_translate(
 
     verdict = snapshot.verdict_kind
 
-    if verdict == "ARCHITECTURE_REVIEW_REQUIRED":
+    if verdict == VERDICT_ARCHITECTURE_REVIEW_REQUIRED:
         return Wait(
             source_revision=candidate.source_revision,
             decided_unix=observed_unix,
@@ -523,7 +532,7 @@ def _consult_math_and_translate(
             retry_after_seconds=300.0,
         )
 
-    if verdict == "NO_ELIGIBLE_WORK":
+    if verdict == VERDICT_NO_ELIGIBLE_WORK:
         return Wait(
             source_revision=candidate.source_revision,
             decided_unix=observed_unix,
@@ -536,19 +545,21 @@ def _consult_math_and_translate(
             retry_after_seconds=60.0,
         )
 
-    if verdict == "DISPATCH_RESEARCH":
+    if verdict == VERDICT_DISPATCH_RESEARCH:
         # Override the wire ``role`` to ``research`` (existing wire value),
-        # inject the directive content hash as an opaque payload field.
+        # inject the math-side typed identity into the payload as opaque
+        # fields. The keys come from
+        # ``research_institution.contracts.source_decision.PAYLOAD_KEY_*``.
         new_work = [
             dataclasses.replace(
                 req,
                 role="research",
                 payload={
                     **req.payload,
-                    "math_directive_content_hash": snapshot.directive_content_hash,
-                    "math_directive_template_hash": snapshot.directive_template_hash,
-                    "stagnation_session_count": snapshot.stagnation_session_count,
-                    "math_target": snapshot.target,
+                    PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH: snapshot.directive_content_hash,
+                    PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH: snapshot.directive_template_hash,
+                    PAYLOAD_KEY_STAGNATION_SESSION_COUNT: snapshot.stagnation_session_count,
+                    PAYLOAD_KEY_MATH_TARGET: snapshot.target,
                 },
             )
             for req in work
@@ -565,17 +576,17 @@ def _consult_math_and_translate(
             ),
         )
 
-    if verdict == "DISPATCH_ARCHITECT":
+    if verdict == VERDICT_DISPATCH_ARCHITECT:
         new_work = [
             dataclasses.replace(
                 req,
                 role="maintenance",
                 payload={
-                    "math_directive_content_hash": snapshot.directive_content_hash,
-                    "math_directive_template_hash": snapshot.directive_template_hash,
-                    "stagnation_session_count": snapshot.stagnation_session_count,
-                    "math_target": snapshot.target,
-                    "previous_payload": req.payload,
+                    PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH: snapshot.directive_content_hash,
+                    PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH: snapshot.directive_template_hash,
+                    PAYLOAD_KEY_STAGNATION_SESSION_COUNT: snapshot.stagnation_session_count,
+                    PAYLOAD_KEY_MATH_TARGET: snapshot.target,
+                    PAYLOAD_KEY_PREVIOUS_PAYLOAD: req.payload,
                 },
             )
             for req in work

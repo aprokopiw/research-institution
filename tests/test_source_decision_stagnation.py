@@ -28,6 +28,13 @@ These tests pin:
 from __future__ import annotations
 
 import tempfile
+
+from mathlint.orchestration.live_source_snapshot import (
+    VERDICT_ARCHITECTURE_REVIEW_REQUIRED,
+    VERDICT_DISPATCH_ARCHITECT,
+    VERDICT_DISPATCH_RESEARCH,
+    VERDICT_NO_ELIGIBLE_WORK,
+)
 from pathlib import Path
 from unittest.mock import patch
 
@@ -42,11 +49,14 @@ from pi_monitor.work.work_source import (
 )
 
 from research_institution.contracts.source_decision import (
+    EXTENDED_REASON_CODES,
+    PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH,
+    PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH,
+    PAYLOAD_KEY_STAGNATION_SESSION_COUNT,
     REASON_ARCHITECTURE_REVIEW_DISPATCH,
     REASON_ARCHITECTURE_REVIEW_REQUIRED,
     REASON_NO_ELIGIBLE_WORK,
     REASON_WORK_AVAILABLE,
-    EXTENDED_REASON_CODES,
 )
 from research_institution.providers.research_institution_provider import (
     select_next_work_for_supervisor,
@@ -254,7 +264,7 @@ def _run_provider_consult(
 def test_no_stagnation_returns_dispatch_research(tmp_path: Path) -> None:
     """0 no-delta on the target -> Dispatch(role='research')."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("DISPATCH_RESEARCH", no_delta_count=0)
+    patches = _stub_consult(VERDICT_DISPATCH_RESEARCH, no_delta_count=0)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Dispatch)
     assert len(envelope.work) == 1
@@ -263,8 +273,8 @@ def test_no_stagnation_returns_dispatch_research(tmp_path: Path) -> None:
     assert dispatched.role in WIRE_LEGAL_ROLES
     assert envelope.reason_code == REASON_WORK_AVAILABLE
     # The directive content hash is injected into the payload.
-    assert "math_directive_content_hash" in dispatched.payload
-    assert dispatched.payload["math_directive_content_hash"].startswith("sha256:")
+    assert PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH in dispatched.payload
+    assert dispatched.payload[PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH].startswith("sha256:")
 
 
 # ----------------------------------------------------------------------------
@@ -275,11 +285,11 @@ def test_no_stagnation_returns_dispatch_research(tmp_path: Path) -> None:
 def test_one_no_delta_returns_dispatch_research(tmp_path: Path) -> None:
     """1 no-delta is not yet stagnation; still dispatch researcher."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("DISPATCH_RESEARCH", no_delta_count=1)
+    patches = _stub_consult(VERDICT_DISPATCH_RESEARCH, no_delta_count=1)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Dispatch)
     assert envelope.work[0].role == "research"
-    assert envelope.work[0].payload["stagnation_session_count"] == 1
+    assert envelope.work[0].payload[PAYLOAD_KEY_STAGNATION_SESSION_COUNT] == 1
 
 
 # ----------------------------------------------------------------------------
@@ -290,7 +300,7 @@ def test_one_no_delta_returns_dispatch_research(tmp_path: Path) -> None:
 def test_two_no_delta_returns_wait_architecture_review(tmp_path: Path) -> None:
     """2+ no-delta flips to Wait(reason_code='architecture_review_required')."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("ARCHITECTURE_REVIEW_REQUIRED", no_delta_count=2)
+    patches = _stub_consult(VERDICT_ARCHITECTURE_REVIEW_REQUIRED, no_delta_count=2)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Wait)
     assert envelope.reason_code == REASON_ARCHITECTURE_REVIEW_REQUIRED
@@ -306,7 +316,7 @@ def test_two_no_delta_returns_wait_architecture_review(tmp_path: Path) -> None:
 def test_three_no_delta_returns_dispatch_architect(tmp_path: Path) -> None:
     """Admitted architect round -> Dispatch(role='maintenance')."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("DISPATCH_ARCHITECT", no_delta_count=3)
+    patches = _stub_consult(VERDICT_DISPATCH_ARCHITECT, no_delta_count=3)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Dispatch)
     assert envelope.reason_code == REASON_ARCHITECTURE_REVIEW_DISPATCH
@@ -322,7 +332,7 @@ def test_three_no_delta_returns_dispatch_architect(tmp_path: Path) -> None:
 def test_no_eligible_work_returns_wait(tmp_path: Path) -> None:
     """NO_ELIGIBLE_WORK from the consult -> Wait(reason_code='no_eligible_work')."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("NO_ELIGIBLE_WORK", no_delta_count=0)
+    patches = _stub_consult(VERDICT_NO_ELIGIBLE_WORK, no_delta_count=0)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Wait)
     assert envelope.reason_code == REASON_NO_ELIGIBLE_WORK
@@ -349,7 +359,7 @@ def test_role_aware_payload_includes_math_directive_hashes(tmp_path: Path) -> No
         root = tmp_path
 
     class _Snapshot:
-        verdict_kind = "DISPATCH_RESEARCH"
+        verdict_kind = VERDICT_DISPATCH_RESEARCH
         target = "op-A"
         stagnation_session_count = 0
         directive_content_hash = test_directive_hash
@@ -362,8 +372,8 @@ def test_role_aware_payload_includes_math_directive_hashes(tmp_path: Path) -> No
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Dispatch)
     dispatched = envelope.work[0]
-    assert dispatched.payload["math_directive_content_hash"] == test_directive_hash
-    assert dispatched.payload["math_directive_template_hash"] == test_template_hash
+    assert dispatched.payload[PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH] == test_directive_hash
+    assert dispatched.payload[PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH] == test_template_hash
 
 
 # ----------------------------------------------------------------------------
@@ -374,10 +384,10 @@ def test_role_aware_payload_includes_math_directive_hashes(tmp_path: Path) -> No
 def test_no_source_decision_variant_introduced(tmp_path: Path) -> None:
     """Across all four consult verdicts, the envelope stays inside Dispatch|Wait|...|Stop."""
     for verdict in (
-        "DISPATCH_RESEARCH",
-        "DISPATCH_ARCHITECT",
-        "ARCHITECTURE_REVIEW_REQUIRED",
-        "NO_ELIGIBLE_WORK",
+        VERDICT_DISPATCH_RESEARCH,
+        VERDICT_DISPATCH_ARCHITECT,
+        VERDICT_ARCHITECTURE_REVIEW_REQUIRED,
+        VERDICT_NO_ELIGIBLE_WORK,
     ):
         candidate = _make_candidate_work()
         patches = _stub_consult(verdict, no_delta_count=2)
@@ -391,8 +401,8 @@ def test_no_source_decision_variant_introduced(tmp_path: Path) -> None:
 def test_dispatched_role_always_in_wire_legal_literal(tmp_path: Path) -> None:
     """Every dispatched WorkRequest.role is inside the wire RoleName Literal."""
     for verdict, expected_role in (
-        ("DISPATCH_RESEARCH", "research"),
-        ("DISPATCH_ARCHITECT", "maintenance"),
+        (VERDICT_DISPATCH_RESEARCH, "research"),
+        (VERDICT_DISPATCH_ARCHITECT, "maintenance"),
     ):
         candidate = _make_candidate_work()
         patches = _stub_consult(verdict, no_delta_count=2)
@@ -411,7 +421,7 @@ def test_dispatched_role_always_in_wire_legal_literal(tmp_path: Path) -> None:
 def test_no_math_role_profile_names_on_wire(tmp_path: Path) -> None:
     """``MATHEMATICAL_RESEARCHER`` / ``MATHEMATICAL_ARCHITECT`` NEVER on the wire."""
     candidate = _make_candidate_work()
-    patches = _stub_consult("DISPATCH_RESEARCH", no_delta_count=0)
+    patches = _stub_consult(VERDICT_DISPATCH_RESEARCH, no_delta_count=0)
     envelope = _run_provider_consult(tmp_path, candidate, *patches)
     assert isinstance(envelope, Dispatch)
     for wr in envelope.work:
@@ -427,7 +437,7 @@ def test_no_math_role_profile_names_on_wire(tmp_path: Path) -> None:
 def test_wait_reason_codes_are_in_extended_set(tmp_path: Path) -> None:
     """Wait envelopes' reason_code is inside the extended reason-code set."""
     candidate = _make_candidate_work()
-    for verdict in ("ARCHITECTURE_REVIEW_REQUIRED", "NO_ELIGIBLE_WORK"):
+    for verdict in (VERDICT_ARCHITECTURE_REVIEW_REQUIRED, VERDICT_NO_ELIGIBLE_WORK):
         patches = _stub_consult(verdict, no_delta_count=2)
         envelope = _run_provider_consult(tmp_path, candidate, *patches)
         assert isinstance(envelope, Wait)

@@ -166,6 +166,37 @@ WorkRequestRoleAlias = Literal[
     "default",
 ]
 
+# ---------------------------------------------------------------------------
+# Plan-013 OS-side WorkRequest payload keys.
+#
+# The OS consults math's live-source snapshot and injects the typed
+# identity fields (``directive_content_hash``, ``directive_template_hash``,
+# ``stagnation_session_count``, ``math_target``) into the dispatched
+# ``WorkRequest.payload`` as opaque fields. pi_monitor's wire codec
+# treats the payload as opaque per `@CTR-0001`; the worker reads the
+# fields and uses the directive content hash as the math-side typed
+# identity. Documenting them as constants keeps the provider, the
+# tests, and the docs in sync (one source of truth per key).
+# ---------------------------------------------------------------------------
+
+PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH: Final[str] = "math_directive_content_hash"
+PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH: Final[str] = "math_directive_template_hash"
+PAYLOAD_KEY_STAGNATION_SESSION_COUNT: Final[str] = "stagnation_session_count"
+PAYLOAD_KEY_MATH_TARGET: Final[str] = "math_target"
+PAYLOAD_KEY_PREVIOUS_PAYLOAD: Final[str] = "previous_payload"
+
+#: Closed Literal of the four OS-injected payload keys (plus the
+#: optional ``previous_payload`` for architect-round carry-over).
+#: Use this type for code that iterates or asserts on the payload
+#: keys (e.g., tests, validators, supervisor-side audit consumers).
+PayloadKeyPlan013 = Literal[
+    "math_directive_content_hash",
+    "math_directive_template_hash",
+    "stagnation_session_count",
+    "math_target",
+    "previous_payload",
+]
+
 #: ``kind`` discriminator StrEnum. Re-export of
 #: :class:`pi_monitor.work.work_source.DecisionKind`. This is the
 #: canonical type for the envelope ``kind`` field; pi_monitor emits
@@ -525,6 +556,12 @@ __all__ = [
     "Dispatch",
     "OperationKind",
     "OperatorRequired",
+    "PAYLOAD_KEY_MATH_DIRECTIVE_CONTENT_HASH",
+    "PAYLOAD_KEY_MATH_DIRECTIVE_TEMPLATE_HASH",
+    "PAYLOAD_KEY_MATH_TARGET",
+    "PAYLOAD_KEY_PREVIOUS_PAYLOAD",
+    "PAYLOAD_KEY_STAGNATION_SESSION_COUNT",
+    "PayloadKeyPlan013",
     "REASON_ARCHITECTURE_REVIEW_DISPATCH",
     "REASON_ARCHITECTURE_REVIEW_REQUIRED",
     "REASON_BLOCKED_WORK_PRESENT",
