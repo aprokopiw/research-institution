@@ -36,11 +36,9 @@ says "to read `@ADR-0091`, look at `pi_monitor/docs/semantic/adr/...`".
 | `@ADR-0005` | `research-institution/docs/semantic/adr/` | reasoning tail |
 | `@ADR-0006` | `research-institution/docs/semantic/adr/` | research-institution scope |
 | `@ADR-0007` | `research-institution/docs/semantic/adr/` | research-institution owns work-source provider |
-| `@ADR-0009` | `research-institution/docs/semantic/adr/cross-repo-requests/` | pi_monitor supervisor-side repeat circuit (DRAFTED, pending) |
 | `@CTR-0088` | `research-institution/docs/semantic/contracts/` | catalog schema contract |
 | `@CTR-0094` | `research-institution/docs/semantic/contracts/` | work-source provider dispatch envelope |
 | `@INV-0093` | `research-institution/docs/semantic/invariants/` | institution green gate is canonical wiring evidence |
-| `@INV-0094` | `research-institution/docs/semantic/invariants/` | operator-driven no-delta loop requires ADR-0009 supervisor circuit (or budget cap) |
 
 ### Math-engine anchors (most-cited)
 

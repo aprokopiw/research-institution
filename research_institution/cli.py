@@ -368,25 +368,9 @@ def start(
             )
             if verdict.reason:
                 typer.echo(f"  reason: {verdict.reason}", err=True)
-            if verdict.task_kind == "(operator-direction-required)":
-                # Per @INV-0094: every active item is gated on
-                # operator input. The fix is to flip the
-                # ``needs_operator_direction`` flag (or
-                # answer ``operator_question``) in the roadmap
-                # and refresh the artifact, NOT to run
-                # architect-apply.
-                typer.echo(
-                    "  fix: answer the operator_question(s) in "
-                    "programs/kaplansky-roadmap.toml, set "
-                    "needs_operator_direction=false on each "
-                    "blocked item, refresh artifacts, then "
-                    "research start kaplansky again.", err=True,
-                )
-            else:
-                typer.echo(
-                    "  fix: run `mathlint architect-apply --recommendation <yaml>` and retry.",
-                    err=True,
-                )
+            typer.echo(
+                "  fix: run `mathlint architect-apply --recommendation <yaml>` and retry.", err=True
+            )
             typer.echo("  override: pass --skip-gate to launch anyway (logged).", err=True)
             raise typer.Exit(code=EXIT_GATE_CLOSED)
         typer.echo(f"gate OK (TASK KIND={verdict.task_kind})", err=True)

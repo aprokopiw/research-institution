@@ -320,26 +320,10 @@ class Dispatcher:
                     exc_module = None
             roadmap_not_found_cls = getattr(exc_module, "RoadmapNotFoundError", None)
             no_active_work_cls = getattr(exc_module, "NoActiveWorkError", None)
-            operator_direction_required_cls = getattr(exc_module, "OperatorDirectionRequiredError", None)
             if roadmap_not_found_cls is not None and isinstance(exc, roadmap_not_found_cls):
                 return GateVerdict(
                     task_kind="(roadmap-missing)",
                     status=GateVerdictStatus.CLOSED,
-                    reason=str(exc),
-                )
-            if operator_direction_required_cls is not None and isinstance(exc, operator_direction_required_cls):
-                # Per @INV-0094: the math agent has bounded every
-                # available item and is asking for operator input.
-                # Status UNKNOWN (rather than CLOSED) because the
-                # gate verdict drives the dispatcher to emit
-                # ``operator_required`` to the supervisor: the
-                # ``start kaplansky`` CLI will refuse to spawn
-                # and surface the parked questions inline. The
-                # supervisor's own circuit (per @ADR-0009) is the
-                # long-term fix; this is the interlock.
-                return GateVerdict(
-                    task_kind="(operator-direction-required)",
-                    status=GateVerdictStatus.UNKNOWN,
                     reason=str(exc),
                 )
             if no_active_work_cls is not None and isinstance(exc, no_active_work_cls):
