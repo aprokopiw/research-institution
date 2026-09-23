@@ -36,9 +36,22 @@ says "to read `@ADR-0091`, look at `pi_monitor/docs/semantic/adr/...`".
 | `@ADR-0005` | `research-institution/docs/semantic/adr/` | reasoning tail |
 | `@ADR-0006` | `research-institution/docs/semantic/adr/` | research-institution scope |
 | `@ADR-0007` | `research-institution/docs/semantic/adr/` | research-institution owns work-source provider |
+| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision (supersedes `@ADR-0009`) |
 | `@CTR-0088` | `research-institution/docs/semantic/contracts/` | catalog schema contract |
 | `@CTR-0094` | `research-institution/docs/semantic/contracts/` | work-source provider dispatch envelope |
+| `@CTR-0095` | `research-institution/docs/semantic/contracts/` | live-source snapshot — math-side consult adapter for source-decision flow |
 | `@INV-0093` | `research-institution/docs/semantic/invariants/` | institution green gate is canonical wiring evidence |
+| `@INV-0094` | `research-institution/docs/semantic/invariants/` | no-delta loop is broken by source-side stagnation consult, not by supervisor-side circuit |
+
+Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
+
+| Anchor  | Lives in | Title (abridged) |
+|---------|----------|------------------|
+| `@ADR-0007` (cross-repo) | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint architect-review must accept --program `<name>` |
+| `@ADR-0008` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` source-side repeat limit |
+| `@ADR-0009` | `research-institution/docs/semantic/adr/cross-repo-requests/` | pi_monitor supervisor-side repeat circuit (**superseded by `@ADR-0011`**) |
+| `@ADR-0010` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` `kind` discriminator must use the canonical lowercase form |
+| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision |
 
 ### Math-engine anchors (most-cited)
 

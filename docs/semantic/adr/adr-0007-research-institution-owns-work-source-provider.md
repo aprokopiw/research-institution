@@ -6,11 +6,11 @@ title: Research-institution owns the WorkSourceProvider slot in mathlint
 date: 2026-09-20
 related:
   - ADR-0006
-  - INV-0091
-  - INV-0092
-  - INV-0093
   - ADR-0014
   - CTR-0020
+  - ADR-0011-stagnation-handling-is-a-source-decision
+  - INV-0093
+  - INV-0094
 supersedes: []
 ---
 
@@ -18,7 +18,8 @@ supersedes: []
 
 ## Context
 
-`@INV-0091` (mathlint is program-agnostic) and `@CTR-0020` (the
+`@ADR-0014-mathlint-does-not-import-program-named-modules`
+(mathlint is program-agnostic) and `@CTR-0020` (the
 generic `mathlint.providers` entry point is the canonical discovery
 surface for proof programs) together define an extension point:
 mathlint's `ProgramProviders.work_source_provider` slot is a
@@ -143,8 +144,10 @@ Its `register()`:
 
 - **WorkSourceProvider in mathlint itself**: mathlint ships a
   default work-selection implementation. Rejected:
-  `@INV-0091` forbids this. A kernel does not decide what
-  work the OS should queue.
+  `@ADR-0014-mathlint-does-not-import-program-named-modules`
+  forbids this (mathlint does not import program-named modules
+  and does not ship its own work-decision syscall). A kernel
+  does not decide what work the OS should queue.
 
 ## Consequences
 

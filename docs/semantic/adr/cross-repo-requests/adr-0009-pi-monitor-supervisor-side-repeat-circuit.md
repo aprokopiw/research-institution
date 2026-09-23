@@ -1,15 +1,19 @@
 ---
 id: ADR-0009
 kind: request
-status: drafted
+status: superseded
 target: pi_monitor
 target-id: adr-pending-in-pi-monitor
 title: pi_monitor supervisor must refuse re-dispatch when N consecutive attempts share the same (operation_id, outcome, status)
 date: 2026-09-19
+superseded-by: @ADR-0011-stagnation-handling-is-a-source-decision
+superseded-on: 2026-09-20
 related:
   - AGENTS.md
   - ADR-0006
   - @INV-0093
+  - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
+  - @CTR-0095-live-source-snapshot-contract
 origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 ---
 
@@ -17,7 +21,16 @@ origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 
 ## Status
 
-**Drafted in research-institution; pending ratification in pi_monitor.**
+**Superseded by `@ADR-0011-stagnation-handling-is-a-source-decision` on
+2026-09-20.** This ADR is retained as a historical postmortem record; the
+authority boundary it proposed was wrong. The supervisor (pi_monitor) is the
+wrong layer to enforce no-delta handling; the source
+(research-institution's `select_next_work_for_supervisor`) is the right
+layer. See `@ADR-0014-execution-authority-boundary` (pi_monitor) for the
+loop-not-DAG guardrail this ADR would have violated.
+
+**Originally drafted:** 2026-09-19, in research-institution; pending
+ratification in pi_monitor at the time of withdrawal.
 
 ## Origin (postmortem)
 

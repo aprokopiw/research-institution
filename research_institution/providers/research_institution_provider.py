@@ -9,6 +9,45 @@ the ``register()`` function below.
 
 Contract: ``@CTR-0094`` (work-source-provider dispatch envelope).
 
+Responsibilities:
+- Fill math's ``WorkSourceProvider`` slot with a single
+  typed callable ``select_next_work_for_supervisor(repository)``.
+- Read the program's roadmap via the kernel-blessed
+  ``mathlint.program_work_selection`` entry-point group
+  (never by hardcoded program name).
+- Translate math's verdict (via
+  ``mathlint.orchestration.live_source_snapshot.consult_work_source_snapshot``,
+  plan-013 PR-B) into the existing
+  ``SourceDecision`` vocabulary (Dispatch | Wait |
+  OperatorRequired | Stop).
+- Translate role-aware verdict kinds into
+  ``WorkRequest(role=MATHEMATICAL_RESEARCHER | MATHEMATICAL_ARCHITECT, ...)``
+  per the plan-013 architecture-review flow.
+
+Non-responsibilities:
+- Mutate canonical state (math's job).
+- Run the math-side supervisor cycle (math's job; the
+  consult wrapper is read-only).
+- Launch workers (pi_monitor's job).
+- Decide mathematical strategy (math's job; the consult
+  wrapper returns the verdict).
+- Inspect provider-shaped data or knowledge about the
+  worker's reasoning (the WorkerOutcomeEnvelope is opaque
+  per @CTR-0002-worker-outcomes-are-bounded-and-non-authoritative).
+
+Contracts:
+- @CTR-0094-work-source-provider-dispatch-envelope
+- @CTR-0095-live-source-snapshot-contract (plan-013)
+- @ADR-0007-research-institution-owns-work-source-provider
+- @ADR-0011-stagnation-handling-is-a-source-decision (plan-013)
+- @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult (plan-013)
+- @CTR-0021-wire-protocol-version-pinned
+
+The consult-and-translate step (see :func:`select_next_work_for_supervisor`)
+implements the plan-013 architecture-review flow per @ADR-0011
+and @INV-0094. Adding a new verdict_kind here is a deliberate
+schema bump; see @CTR-0021-wire-protocol-version-pinned.
+
 Composition with proof programs (per @ADR-0007):
 The OS owns the *work-source slot* AND the *work-selection
 call*. Each proof program owns its *content contributions*
