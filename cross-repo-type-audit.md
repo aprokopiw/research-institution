@@ -260,18 +260,18 @@ For every wire-shape concept, here is every class that exists, with file:line ev
 
 ### 5.8 Audit summary table
 
-| Concept | Canonical | Duplicates to delete |
-|---|---|---|
-| `ExecutionReport` (runtime dataclass) | pi_monitor `work/work_source.py:405` | kaplansky `launcher/reports.py:32` |
-| `ExecutionReportWireModel` (Pydantic wire) | pi_monitor `protocol/wire_models.py:122` | kaplansky `launcher/execution_report.py:31` (the entire `TypedExecutionReport` Pydantic class is a duplicate) |
-| `ExecutionReport` math parse | math `orchestration/_deprecated_launcher/reports.py:30` | (delete as part of `_deprecated_launcher/` retirement; not a duplicate per se, but unmaintained) |
-| `SourceDecisionWireModel` | pi_monitor `protocol/wire_models.py:276` | RI `contracts/source_decision.py:202` (`SourceDecisionWireDict`) |
-| `SourceRevisionWireModel` | pi_monitor `protocol/wire_models.py:83` | RI `contracts/source_decision.py:151` (`SourceRevisionWireDict`) |
-| `WorkRequestWireModel` | pi_monitor `protocol/wire_models.py:179` | RI `contracts/source_decision.py:168` (`WorkRequestWireDict`) |
-| `DecisionKind` (StrEnum) | pi_monitor `work/work_source.py:42` | (RI alias is fine) |
-| `OperationKind` Literal | should move from pi_monitor to RI | pi_monitor `work/work_source.py:173` (drop Literal; keep `= str`) |
-| `WorkspaceName` Literal | should move from pi_monitor to RI | pi_monitor `work/work_source.py:194` (drop Literal; keep `= str`) |
-| `RoleName` Literal | see Q1 | see Q1 |
+| Concept | Canonical | Duplicates to delete | Resolution |
+|---|---|---|---|
+| `ExecutionReport` (runtime dataclass) | pi_monitor `work/work_source.py:405` | kaplansky `launcher/reports.py:32` | ✅ commit `6630b3f` — replaced with `LegacyCompatibleReport` wrapper that delegates core fields to the canonical wire model |
+| `ExecutionReportWireModel` (Pydantic wire) | pi_monitor `protocol/wire_models.py:122` | kaplansky `launcher/execution_report.py:31` (the entire `TypedExecutionReport` Pydantic class is a duplicate) | ✅ commit `6630b3f` — replaced with `LegacyCompatibleReport`; `ExecutionReportWireModel` extended with `recorded_unix` (commit `504ad51`) to absorb the on-disk JSONL shape |
+| `ExecutionReport` math parse | math `orchestration/_deprecated_launcher/reports.py:30` | (delete as part of `_deprecated_launcher/` retirement; not a duplicate per se, but unmaintained) | ⏸️ deferred — `@INV-0086` deprecated-namespace retirement |
+| `SourceDecisionWireModel` | pi_monitor `protocol/wire_models.py:276` | RI `contracts/source_decision.py:202` (`SourceDecisionWireDict`) | ✅ commit `09ccc7d` — replaced with re-export alias |
+| `SourceRevisionWireModel` | pi_monitor `protocol/wire_models.py:83` | RI `contracts/source_decision.py:151` (`SourceRevisionWireDict`) | ✅ commit `09ccc7d` — replaced with re-export alias |
+| `WorkRequestWireModel` | pi_monitor `protocol/wire_models.py:179` | RI `contracts/source_decision.py:168` (`WorkRequestWireDict`) | ✅ commit `09ccc7d` — replaced with re-export alias |
+| `DecisionKind` (StrEnum) | pi_monitor `work/work_source.py:42` | (RI alias is fine) | ✅ no action needed; Q1 confirmed |
+| `OperationKind` Literal | should move from pi_monitor to RI | pi_monitor `work/work_source.py:173` (drop Literal; keep `= str`) | ✅ commit `89bfb56` — pi_monitor's `OperationKind = str`; commit `09ccc7d` — RI owns the canonical Literal |
+| `WorkspaceName` Literal | should move from pi_monitor to RI | pi_monitor `work/work_source.py:194` (drop Literal; keep `= str`) | ✅ commit `89bfb56` — pi_monitor's `WorkspaceName = str`; commit `09ccc7d` — RI owns the canonical Literal |
+| `RoleName` Literal | see Q1 | see Q1 | ✅ Q1 decision: stays a closed Literal in pi_monitor (generic vocabulary, not program identities) |
 
 ---
 
