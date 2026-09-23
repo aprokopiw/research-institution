@@ -336,16 +336,18 @@ def test_plan_013_dispatch_envelope_parses_with_new_reason_code() -> None:
 def test_mathlint_decide_next_envelope_parses() -> None:
     """The exact envelope shape `real_source.decide_next` returns.
 
-    Snapshot of the mathlint wire output (captured from
-    `real_source.py:189`). Pins the drift documented in `@ADR-0010`:
-    the emitter uses `"Dispatch"` (capitalized) while the canonical
-    kind is `"dispatch"` (lowercase). The parser rejects the literal
-    mathlint output; when mathlint fixes the emitter (or pi_monitor
-    adds case-folding), this test must be updated to assert the new
-    accepted behavior.
+    Historical note (@ADR-0010 closed): mathlint's emitter used
+    to emit `"Dispatch"` (capitalized) which the strict parser
+    rejects by design. mathlint now emits the canonical lowercase
+    `"dispatch"` via `DecisionKind.DISPATCH.value`; this test
+    pins the lowercase form as the wire-shape contract.
+
+    The original adversarial check (parser rejects `"Dispatch"`)
+    is preserved as a separate parser-strictness invariant
+    (see ``test_unknown_kind_raises_value_error``).
     """
     env = {
-        "kind": "Dispatch",
+        "kind": "dispatch",
         "reason": "MathLint authorized next step",
         "reason_code": "mathlint_next_step",
         "source_revision": {
@@ -376,11 +378,12 @@ def test_mathlint_decide_next_envelope_parses() -> None:
             }
         ],
     }
-    # mathlint emits `"Dispatch"` (capitalized); the parser rejects
-    # capitalized variants by design (drift detection). The drift is
-    # filed as @ADR-0010.
-    with pytest.raises(ValueError, match="unknown source-decision kind"):
-        parse_source_decision(env)
+    # mathlint emits `"dispatch"` (lowercase) via
+    # `DecisionKind.DISPATCH.value`. The envelope parses cleanly;
+    # `@ADR-0010` is closed.
+    parsed = parse_source_decision(env)
+    assert isinstance(parsed, Dispatch)
+    assert parsed.work[0].operation_id == "mathlint-next-step"
 
 
 def test_lowercase_kinds_parse_correctly() -> None:

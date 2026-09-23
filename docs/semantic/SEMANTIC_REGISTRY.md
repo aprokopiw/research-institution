@@ -50,8 +50,8 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 | `@ADR-0007` (cross-repo) | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint architect-review must accept --program `<name>` |
 | `@ADR-0008` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` source-side repeat limit |
 | `@ADR-0009` | `research-institution/docs/semantic/adr/cross-repo-requests/` | pi_monitor supervisor-side repeat circuit (**superseded by `@ADR-0011`**) |
-| `@ADR-0010` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` `kind` discriminator must use the canonical lowercase form |
-| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision |
+| `@ADR-0010` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` `kind` discriminator must use the canonical lowercase form (closed 2026-09-20) |
+| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision (shipped plan-013) |
 
 ### Math-engine anchors (most-cited)
 

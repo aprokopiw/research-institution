@@ -1,11 +1,20 @@
 ---
 id: ADR-0011
 kind: cross-repo-request
-status: drafted
+status: shipped
 target: research-institution, math-engine
 target-id: adr-pending-in-research-institution
 title: Stagnation handling is a source decision, not a supervisor decision
 date: 2026-09-20
+shipped-on: 2026-09-20
+shipped-by:
+  - research-institution PR-A (durable record landing) commit 4f97c78
+  - research-institution PR-A.1 (wire-vocab corrections) commit 1405be6
+  - research-institution PR-C (consult-and-translate step) commit 68f4500
+  - research-institution PR-D (14-gate closure audit) commit 5ad2748
+  - math PR-B (consult adapter) commit 15c7017
+  - math PR-B.1 (program-named literals cleanup) commit 06cec6c
+  - math PR-D (math-side ledger; later retired) commit 8eeaa65
 supersedes:
   - docs/semantic/adr/cross-repo-requests/adr-0009-pi-monitor-supervisor-side-repeat-circuit.md
 related:
@@ -29,9 +38,21 @@ postmortem:
 
 ## Status
 
-**Drafted in research-institution; pending ratification in
-math-engine.** This ADR documents the institution's request to
-math-engine maintainers. It is durable in this repo (the
+**Shipped in plan-013 (2026-09-20).** The institution-side
+implementation is in `research-institution/providers/
+research_institution_provider.py::_consult_math_and_translate`
+and is wired through `select_next_work_for_supervisor`. The
+math-side sibling is `math/src/mathlint/orchestration/
+live_source_snapshot.py::consult` (sibling ADR
+`@ADR-0097-live-source-snapshot-consult-adapter`, status
+`proposed`). Wire shape is byte-identical to pre-plan-013;
+pi_monitor is byte-identical pre/post. Closure audit:
+`docs/operations/plan-013-closure-audit.md`.
+
+**Original status (2026-09-20, pre-ship):** Drafted in
+research-institution; pending ratification in math-engine.
+This ADR documented the institution's request to math-engine
+maintainers. It is durable in this repo (the
 request is an institution-owned record); the implementation
 lands in math-engine via a sibling ADR that cites this one.
 

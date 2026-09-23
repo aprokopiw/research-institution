@@ -1,11 +1,13 @@
 ---
 id: ADR-0010
 kind: request
-status: drafted
+status: closed
 target: mathlint
 target-id: adr-pending-in-math
 title: mathlint decide_next kind discriminator must use the canonical lowercase form per pi_monitor.work.work_source
 date: 2026-09-19
+closed-on: 2026-09-20
+closed-by: math commit referencing DecisionKind.DISPATCH.value emit sites
 related:
   - AGENTS.md
   - ADR-0006
@@ -19,10 +21,17 @@ origin-test: research-institution/tests/test_source_decision_contract.py::test_m
 
 ## Status
 
-**Drafted in research-institution; pending ratification in math-engine.**
-Caught by `tests/test_source_decision_contract.py::test_mathlint_decide_next_envelope_parses`,
-which fails on the literal `"Dispatch"` (capitalized) the mathlint
-emitter returns today.
+**Closed 2026-09-20.** mathlint's `real_source.py` now emits
+the canonical lowercase kind via `DecisionKind.{DISPATCH,WAIT,
+OPERATOR_REQUIRED}.value`, where `DecisionKind` is re-exported
+from `pi_monitor.work.work_source` (the wire authority per
+@CTR-0020). The lowercase form parses cleanly under
+research-institution's strict parser; the adversarial check
+that the parser rejects capitalized variants is preserved as
+`test_unknown_kind_raises_value_error`. `ADR-0010` is retained
+for the audit trail; the actual fix is in math's
+`real_source.py` import block + emit sites (lines 26, 160,
+175, 191, 209).
 
 ## Origin (caught by tests, not by operator)
 
