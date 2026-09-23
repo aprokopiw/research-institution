@@ -19,6 +19,21 @@ This repo is governed by the same prime directive as math-engine
   genuinely necessary, it falls under one of the sanctioned
   exception classes enumerated in math-engine's `AGENTS.md`.
 
+- **Anchor ID namespace convention.** Each repo (`math`,
+  `research-institution`, `pi_monitor`, `kaplansky`) has its
+  own `adr-NNNN` / `inv-NNNN` / `ctr-NNNN` / `con-NNNN`
+  numbering — the same ID in two repos is allowed and refers
+  to *different records*. The cross-repo registry
+  (`docs/semantic/SEMANTIC_REGISTRY.md`) disambiguates by
+  listing each anchor's repo. **Exception:** two records in
+  different repos with the same ID and the same kind
+  (e.g. two `@CTR-0095-live-...` contracts in math and
+  research-institution) is a **real RC0 contradictory
+  authority** — one must be renumbered to a free ID before
+  cross-repo references are written. The renumbering done
+  for plan-013 (`@CTR-0095` → `@CTR-0100`) is the canonical
+  example.
+
 - **The prime-directive grep** (run before every commit that
   touches a durable path) is the canonical enforcement. Hits
   outside the sanctioned exception classes are blocking
