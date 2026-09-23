@@ -257,53 +257,86 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
     except _ProgramNoActiveWorkError as exc:
         return Wait(reason_code="no_eligible_work", ...)
 
-    # NEW: consult math's view of the world
+    # NEW: consult math's view of the world. The caller is
+    # responsible for the (cheap) MathProject.load(repository);
+    # the wrapper itself is pure over its inputs.
     try:
-        snapshot = mathlint.orchestration.live_source_snapshot
-                       .consult_work_source_snapshot(repository, candidate_work[0], source_revision)
-    except mathlint_exceptions.StaleSourceRevision:
-        return Wait(reason_code="stale_source_revision", wake_on_source_change=True, ...)
+        math_project = MathProject.load(start=repository)
+    except (FileNotFoundError, OSError, ValidationError) as exc:
+        return Wait(reason_code="math_project_unavailable",
+                    reason=f"cannot load MathProject from {repository}: {exc}",
+                    wake_on_source_change=True)
+    try:
+        snapshot = mathlint.orchestration.live_source_snapshot.consult(
+            math_project=math_project,
+            candidate=candidate_work[0],
+            source_revision_unix=observed,
+        )
+    except StaleSourceRevision:
+        return Wait(reason_code="stale_source_revision",
+                    wake_on_source_change=True, retry_after_seconds=30)
 
-    # NEW: translate verdict into the existing SourceDecision vocabulary
+    # NEW: translate verdict into the existing SourceDecision
+    # vocabulary. Wire role values stay inside pi_monitor's
+    # existing RoleName Literal (default | primary | supporting |
+    # milestone | research | intake | review | maintenance) so
+    # pi_monitor's wire schema is unchanged.
     match snapshot.verdict_kind:
-        case "MATHEMATICAL_RESEARCHER_NEXT":
-            return Dispatch(work=candidate_work, reason_code="work_available",
-                            reason=f"dispatching {len(candidate_work)} active item(s)")
-        case "MATHEMATICAL_ARCHITECT_NEXT":
-            architect_request = WorkRequest(
-                **{**candidate_work[0].__dict__,
-                   "role": "MATHEMATICAL_ARCHITECT",
-                   "payload": snapshot.role_conditioned_directive}
-            )
-            return Dispatch(work=[architect_request], reason_code="architecture_review_dispatch",
+        case "DISPATCH_RESEARCH":
+            dispatched = [
+                dataclasses.replace(req, role="research",
+                                    payload={**req.payload,
+                                             "directive_content_hash":
+                                               snapshot.directive_content_hash,
+                                             "stagnation_session_count":
+                                               snapshot.stagnation_session_count,
+                                             "target": snapshot.target})
+                for req in candidate_work
+            ]
+            return Dispatch(work=dispatched, reason_code="work_available",
+                            reason=f"dispatching {len(dispatched)} active item(s)")
+        case "DISPATCH_ARCHITECT":
+            dispatched = [
+                dataclasses.replace(req, role="maintenance",
+                                    payload={"directive_content_hash":
+                                               snapshot.directive_content_hash,
+                                             "target": snapshot.target,
+                                             "stagnation_session_count":
+                                               snapshot.stagnation_session_count})
+                for req in candidate_work
+            ]
+            return Dispatch(work=dispatched, reason_code="architecture_review_dispatch",
                             reason=f"stagnation on op-{candidate_work[0].operation_id}; routing to architect")
         case "ARCHITECTURE_REVIEW_REQUIRED":
             return Wait(reason_code="architecture_review_required",
                         reason=f"horizon admission pending for op-{candidate_work[0].operation_id}",
                         wake_on_source_change=True, retry_after_seconds=300)
         case "NO_ELIGIBLE_WORK":
-            return Wait(reason_code="no_eligible_work", wake_on_source_change=True, ...)
+            return Wait(reason_code="no_eligible_work",
+                        wake_on_source_change=True, retry_after_seconds=60)
         case _:
-            return Wait(reason_code="unknown_math_verdict", wake_on_source_change=True,
-                        retry_after_seconds=60)
+            return Wait(reason_code="unknown_math_verdict",
+                        wake_on_source_change=True, retry_after_seconds=60)
 ```
 
 Plus one new test file `tests/test_source_decision_stagnation.py` with
 six acceptance tests:
-1. `test_no_stagnation_returns_dispatch_researcher` — 0 no-delta → `Dispatch(role=MATHEMATICAL_RESEARCHER)`.
+1. `test_no_stagnation_returns_dispatch_researcher` — 0 no-delta → `Dispatch(role="research")`.
 2. `test_one_no_delta_returns_dispatch_researcher` — 1 no-delta is not yet stagnation.
 3. `test_two_no_delta_returns_wait_architecture_review` — 2+ no-delta → `Wait(reason_code="architecture_review_required")`.
-4. `test_three_no_delta_returns_dispatch_architect` — admission complete → `Dispatch(role=MATHEMATICAL_ARCHITECT)`.
-5. `test_role_aware_payload_compiles_from_directive_compiler` — `WorkRequest.payload` is the byte-stable output of `compile_architecture_directive`.
-6. `test_supervisor_authority_boundary_is_respected` — no `SourceDecision` variant outside `Dispatch | Wait | OperatorRequired | Stop`; no string like `"stagnation"` / `"architecture_review"` / `"architect_role"` in the `kind` field that crosses the supervisor boundary.
+4. `test_three_no_delta_returns_dispatch_architect` — admission complete → `Dispatch(role="maintenance")` with the architect directive content hash as the payload's identity field.
+5. `test_role_aware_payload_compiles_from_directive_compiler` — `WorkRequest.payload["directive_content_hash"]` is the byte-stable output of math's `compute_directive_content_hash(compile_architecture_directive(...))`.
+6. `test_supervisor_authority_boundary_is_respected` — no `SourceDecision` variant outside `Dispatch | Wait | OperatorRequired | Stop`; no string `"stagnation"` / `"architecture_review"` / `"MATHEMATICAL_RESEARCHER"` / `"MATHEMATICAL_ARCHITECT"` in the `kind` field that crosses the supervisor boundary; wire `role` is always inside pi_monitor's existing 8-value `RoleName` Literal.
 
 Plus extension to `tests/test_source_decision_contract.py` adding
-two more canonical reason codes:
+two more canonical reason codes (and the test that the wire-side
+reason_code can carry them):
 - `REASON_ARCHITECTURE_REVIEW_REQUIRED` — `Wait(reason_code="architecture_review_required", ...)`
-- `REASON_ARCHITECTURE_REVIEW_DISPATCH` — `Dispatch(role=MATHEMATICAL_ARCHITECT, ...)`
+- `REASON_ARCHITECTURE_REVIEW_DISPATCH` — `Dispatch(reason_code="architecture_review_dispatch", ...)`
 
-**No `pi_monitor` schema bump. No `kaplansky` changes. No new
-`SourceDecision` variant.** PR-C reviewable in 60 minutes; ~120
+**No `pi_monitor` schema bump. No `pi_monitor` source change. No
+`kaplansky` changes. No new `SourceDecision` variant. No new
+`RoleName` wire value.** PR-C reviewable in 60 minutes; ~120
 LOC diff.
 
 ### 2.4 — PR-D (post-merge, this repo): close-the-line audit doc
@@ -348,6 +381,16 @@ durable documents assert different authority.
   refreshed, but the language is "the kernel is in
   mid-flight; resume after the kernel commits", not
   "the operator must decide").
+- **`--skip-gate` survives as the kernel-launch escape
+  hatch.** It is a pre-launch override on
+  `research start` (cli.py:269) that only fires when the
+  architecture-review verdict from `mathlint roadmap` is
+  `ARCHITECTURE_REVIEW_REQUIRED`. The override does not
+  affect the supervisor cycle: once the supervisor starts,
+  `select_next_work_for_supervisor` runs every poll and
+  emits `Wait(reason_code="architecture_review_required")`
+  once 2 no-deltas accumulate on the active item, regardless
+  of the launch flag. The model is the research director.
 - Update the cross-repo ask: `@ADR-0007-mathlint-architect-review-program-flag`
   is now superseded by `@ADR-0011`'s consult-and-translate
   flow; the `--verdict --program <name>` CLI request is no
@@ -477,32 +520,56 @@ primitives and closed vocabularies that should be
 stronger types, and the inline comments that should
 become durable records.
 
-### 4.1 — Close the role vocabulary in `WorkRequest.role`
+### 4.1 — Close the role vocabulary at the composition boundary
 
-Today `WorkRequest.role` is a free-form `str`. Math
-already has `RoleProfileName` as a `StrEnum` with two
-values (`MATHEMATICAL_RESEARCHER`, `MATHEMATICAL_ARCHITECT`).
-The role should be typed at the OS-composition-root
-boundary so:
-- A typo (`"math_researcher"` instead of
-  `"MATHEMATICAL_RESEARCHER"`) is caught at the import
-  boundary.
-- The exhaustive `match` in
-  `select_next_work_for_supervisor` (PR-C) is provably
-  exhaustive — adding a new role is a deliberate schema
-  bump.
+Today `WorkRequest.role: RoleName` is a
+`Literal[...]` exported from pi_monitor
+(`pi_monitor.work.work_source.RoleName`) — it already is
+the closed vocabulary. The plan does NOT introduce a
+new wire-side `RoleName` value; the wire vocabulary stays
+exact (`default | primary | supporting | milestone |
+research | intake | review | maintenance`).
 
-**Fix:** In PR-C, add `RoleName = Literal["MATHEMATICAL_RESEARCHER", "MATHEMATICAL_ARCHITECT"]`
-to `research_institution.contracts.source_decision`
-(or import the math-side `RoleProfileName` and re-export
-it per the `@CTR-0021-wire-protocol-version-pinned`
-discipline). Type the `WorkRequest.role` field as
-`RoleName`.
+What the plan adds at the research-institution boundary:
 
-This makes the 6 acceptance tests in PR-C provably
-exhaustive and adds a `test_role_name_is_closed_vocabulary`
-test that fails loudly if a third role is introduced
-without a deliberate schema bump.
+- A `WorkRequestRoleAlias = Literal["research", "maintenance", "primary", "supporting", "default"]`
+  type alias in `research_institution.contracts.source_decision`
+  documenting the small set of wire values the OS actually
+  emits in plan-013 dispatch paths. This is a *narrowing*
+  alias (5 of the 8 wire-legal values), not a new wire
+  variant. It catches typos at the import boundary
+  (`"intake"` vs `"maitenance"`) without forcing the OS
+  side to know all 8 wire values.
+
+The math side keeps its own `RoleProfileName` StrEnum
+(`MATHEMATICAL_RESEARCHER | MATHEMATICAL_ARCHITECT`) which
+gates `compile_*_directive` and `WorkerSubmission.kind`.
+The two vocabularies live in their respective repos; the
+OS boundary does not import math's `RoleProfileName` and
+does not put it on the wire.
+
+### 4.2 — Close the wait-reason vocabulary
+
+Today `Wait.reason_code: str` and
+`Dispatch.reason_code: str` are free-form strings. The
+canonical list lives in
+`research_institution.contracts.source_decision.CANONICAL_REASON_CODES`
+(a `frozenset[str]`). The new plan-013 introduces two
+new reason codes:
+
+- `architecture_review_required` —
+  `Wait(reason_code="architecture_review_required", wake_on_source_change=True)`
+- `architecture_review_dispatch` —
+  `Dispatch(reason_code="architecture_review_dispatch", ...)`
+
+**Fix:** In PR-C, type the constant declarations in
+`research_institution.contracts.source_decision` as
+`Final[str]` literals and add the two new values to
+`CANONICAL_REASON_CODES`. A typo
+(`"arch_review_required"`) is caught by the test suite's
+constant reference. The wire field stays `str` (no
+schema bump); the new values ride along as ordinary
+strings.
 
 ### 4.2 — Close the wait-reason vocabulary
 

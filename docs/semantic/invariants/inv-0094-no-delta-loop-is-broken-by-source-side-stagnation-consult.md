@@ -24,10 +24,20 @@ A live supervisor session that observes two consecutive
 `SourceDecision` from its work source on the next poll
 cycle (either `Wait(reason_code="architecture_review_required", ...)`
 while the horizon admission is pending, or
-`Dispatch(WorkRequest(role=MATHEMATICAL_ARCHITECT, ...))`
-once the horizon is admitted), and MUST NOT receive a
-third `Dispatch(WorkRequest(role=MATHEMATICAL_RESEARCHER, ...))`
-for the same `operation_id`.
+`Dispatch(WorkRequest(role=maintenance, payload=...)` once the horizon
+is admitted and the architect round begins), and MUST NOT
+receive a third plain `Dispatch(WorkRequest(role=research, ...))` for the
+same `operation_id`.
+
+The wire `WorkRequest.role` value in all cases stays
+within pi_monitor's existing `RoleName` Literal
+(`default | primary | supporting | milestone | research |
+intake | review | maintenance`). The math-internal
+`MATHEMATICAL_RESEARCHER` / `MATHEMATICAL_ARCHITECT`
+(`RoleProfileName`) are NEVER on the wire — they gate
+which math compiler runs and which
+`WorkerSubmission.kind` is intake-admissible, not which
+worker the supervisor dispatches.
 
 The supervisor (pi_monitor) is the wrong layer to enforce
 this; the source (research-institution's
@@ -39,8 +49,12 @@ The 2026-09-13 hardening session observed a 187-attempt
 `blocked/stalled` loop on
 `work.kaplansky.extract-minimal-rigidity-overlap`. The
 2026-09-19 live supervisor session observed a four-attempt
-no-delta loop on `K4-characteristic-two-restriction-obstruction`.
-In both cases, the source produced the same
+no-delta loop on `K4-characteristic-two-restriction-obstruction`
+(executions file
+`~/.local/state/mathlint/pi-monitor/executions/750d7954282c886d2bbda84de04881a33151fb25183febe744d78693891e25bb.json`,
+outcome digest
+`aae2f6d576f9655b86bc535d465797c69da760921f71ca85d7926d0d6099b709`
+×4). In both cases, the source produced the same
 `Dispatch(WorkRequest(...))` on each cycle despite the
 worker returning identical no-delta outcomes.
 
@@ -61,12 +75,40 @@ policy (`@ADR-0007-research-institution-owns-work-source-provider`).
 It already owns the typed `SourceDecision` envelope. Adding
 a stagnation consult is a one-step composition.
 
+## How it composes with the existing surface
+
+- `select_global_action(math_project)` already returns
+  `ActionKind.ARCHITECTURE_REVIEW_REQUIRED` once
+  `deltas.stagnation_trigger(root, target).no_delta_count >= 2`.
+  The no-delta verdict is **already computed** inside math;
+  plan-013 surfaces it to the OS layer that previously did not
+  see it.
+- `compile_mathematical_directive` / `compile_architecture_directive`
+  accept `RoleProfile(role_name=MATHEMATICAL_RESEARCHER, ...)`
+  / `MATHEMATICAL_ARCHITECT`. The compiled directive's
+  `compute_directive_content_hash` is byte-stable across two
+  compilations of the same inputs (math's existing invariant;
+  `directive_id` is excluded).
+- The wire schema's `WorkRequest.role: RoleName` is
+  `Literal["default", "primary", "supporting", "milestone",
+  "research", "intake", "review", "maintenance"]`. The source
+  uses `dataclasses.replace(candidate, role="research" | "maintenance" | ...)`
+  so the wire `RoleName` Literal stays exact.
+- `WorkRequest.payload: dict[str, object]` carries the
+  architect-required context (north star, certified reductions,
+  open obligations) as a structured payload; pi_monitor does
+  not read `payload`; the worker reads it. The OS injects
+  ``{"directive_content_hash": snapshot.directive_content_hash,
+  "target": snapshot.target, "stagnation_session_count":
+  snapshot.stagnation_session_count}`` for the worker to verify
+  against the math-side content hash.
+
 ## Enforcement
 
 - `cd research-institution && .venv/bin/python -m pytest -q tests/test_source_decision_stagnation.py`
   is green and includes:
   - `test_no_stagnation_returns_dispatch_researcher` —
-    0 no-delta → `Dispatch(role=MATHEMATICAL_RESEARCHER)`.
+    0 no-delta → `Dispatch(role="research")`.
   - `test_one_no_delta_returns_dispatch_researcher` — 1
     no-delta is not yet stagnation; still dispatch.
   - `test_two_no_delta_returns_wait_architecture_review` —
@@ -74,21 +116,28 @@ a stagnation consult is a one-step composition.
     `Wait(reason_code="architecture_review_required",
     wake_on_source_change=True)`.
   - `test_three_no_delta_returns_dispatch_architect` — when
-    the horizon admission is complete and math returns
-    `MATHEMATICAL_ARCHITECT_NEXT`, dispatch with role=ARCHITECT.
+    the horizon admission is complete and the wrapper returns
+    `DISPATCH_ARCHITECT`, dispatch with `role="maintenance"`.
+  - `test_role_aware_payload_compiles_from_directive_compiler` —
+    `WorkRequest.payload["directive_content_hash"]` is the
+    byte-stable output of math's
+    `compute_directive_content_hash(compile_architecture_directive(...))`.
   - `test_supervisor_authority_boundary_is_respected` —
     asserts no `SourceDecision` variant outside the existing
     `Dispatch | Wait | OperatorRequired | Stop` set is ever
     emitted; asserts no string like `"stagnation"`,
-    `"architecture_review"`, `"architect_role"` appears in
-    the `kind` field that crosses the supervisor boundary.
+    `"architecture_review"`, `"MATHEMATICAL_RESEARCHER"`,
+    `"MATHEMATICAL_ARCHITECT"` appears in the `kind` field
+    that crosses the supervisor boundary; asserts the wire
+    `role` is always inside the existing 8-value `RoleName`
+    Literal.
 - `cd math && .venv/bin/python -m pytest -q tests/integration/test_live_source_snapshot.py`
   is green and covers the wrapper's verdict kinds and
   purity property.
-- `tests/integration/test_wire_protocol_event_union.py`
-  (math) and `tests/test_wire_protocol_unchanged.py`
-  (research-institution) both pass; the wire schema is
-  byte-identical to pre-INV-0094.
+- `tests/test_wire_schema_unchanged.py` (research-institution)
+  pins the wire schema to byte-identical-to-pre-INV-0094; no
+  new `SourceDecision` variants; all `role` values in the
+  existing `RoleName` Literal.
 
 ## Boundary cases
 
@@ -96,13 +145,16 @@ a stagnation consult is a one-step composition.
   `~/.local/state/mathlint/deltas.jsonl`, the horizon
   ledger, or any canonical state. The caller (research-
   institution) is responsible for admission and intake.
-- **The wrapper is pure.** Same inputs → same verdict. No
-  clock, no random IDs, no I/O. Property-based tests
-  assert this.
+- **The wrapper is pure over its inputs.** Same
+  `MathProject` + same `candidate` + same
+  `source_revision_unix` ⇒ the same `LiveSourceSnapshot`.
+  The math-side property test asserts structural equality
+  across 100+ randomized inputs.
 - **The audit event is a strict extension.** No existing
   audit event kind is removed; the new fields
-  (`verdict_kind`, `target`, `stagnation_session_count`)
-  ride along on the existing `source_decision` event.
+  (`verdict_kind`, `target`, `stagnation_session_count`,
+  `directive_content_hash`) ride along on the existing
+  `source_decision` event.
 - **The supervisor's existing circuit breakers** (per
   `@ADR-0009-bounded-recovery-and-soft-circuit`,
   pi_monitor) are NOT replaced by this invariant. They
@@ -111,6 +163,14 @@ a stagnation consult is a one-step composition.
   changes verdict, etc.). The invariant guards against
   the *normal* no-delta pattern; the supervisor's
   circuits guard against *abnormal* source behavior.
+- **`--skip-gate` survives as a rare operator launch escape
+  hatch.** It is a kernel-launch override, not a
+  supervisor-cycle override: the source still runs every
+  cycle, and `Wait(reason_code="architecture_review_required")`
+  fires once 2 no-deltas accumulate even when the supervisor
+  was launched with `--skip-gate`. The `--skip-gate` shape is
+  owned by `cli.py::research start` (preflight), not by the
+  supervisor cycle.
 
 ## Live evidence
 
@@ -149,8 +209,8 @@ attempts 5+   → horizon admission completes (architect
                  the 7-check gate).
                  source.decide() returns
                  Dispatch(WorkRequest(role=
-                 MATHEMATICAL_ARCHITECT, payload=
-                 compile_architecture_directive output)).
+                 maintenance, payload=
+                 {directive_content_hash, target})).
 ```
 
 ## Cross-references

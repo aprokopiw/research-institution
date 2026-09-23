@@ -20,9 +20,15 @@ Responsibilities:
   plan-013 PR-B) into the existing
   ``SourceDecision`` vocabulary (Dispatch | Wait |
   OperatorRequired | Stop).
-- Translate role-aware verdict kinds into
-  ``WorkRequest(role=MATHEMATICAL_RESEARCHER | MATHEMATICAL_ARCHITECT, ...)``
-  per the plan-013 architecture-review flow.
+- Translate math's verdict kinds into the existing wire
+  ``RoleName`` vocabulary by ``dataclasses.replace()`` on the
+  candidate ``WorkRequest``. The wire role is a *generic domain
+  label* (``research`` / ``maintenance`` / ``primary`` / ...,
+  per pi_monitor's ``RoleName`` Literal); math's
+  ``MATHEMATICAL_RESEARCHER`` / ``MATHEMATICAL_ARCHITECT`` are
+  math-INTERNAL ``RoleProfileName`` values that gate which
+  ``compile_*_directive`` runs and which ``WorkerSubmission.kind``
+  is admissible — they NEVER appear on the wire.
 
 Non-responsibilities:
 - Mutate canonical state (math's job).

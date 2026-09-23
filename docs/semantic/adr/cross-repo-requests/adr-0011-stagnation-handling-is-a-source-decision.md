@@ -81,19 +81,24 @@ reveals that all three ask the wrong layer:
 consults math's `stagnation_triggers` and the role-
 conditioned directive compiler, then emits one of:
 
-| Math verdict | SourceDecision |
-| --- | --- |
-| `MATHEMATICAL_RESEARCHER` action | `Dispatch(WorkRequest(role=MATHEMATICAL_RESEARCHER, payload=<compile_mathematical_directive output>))` |
-| `MATHEMATICAL_ARCHITECT` action | `Dispatch(WorkRequest(role=MATHEMATICAL_ARCHITECT, payload=<compile_architecture_directive output>))` |
-| `ARCHITECTURE_REVIEW_REQUIRED` (admission pending) | `Wait(reason_code="architecture_review_required", reason=..., wake_on_source_change=True, retry_after_seconds=300)` |
-| `NO_ELIGIBLE_WORK` | `Wait(reason_code="no_eligible_work", wake_on_source_change=True)` |
+| Math verdict (kernel `ActionKind`) | `LiveSourceSnapshot.verdict_kind` (PR-B wrapper) | `SourceDecision` |
+| --- | --- | --- |
+| `MATHEMATICAL_RESEARCH` (with stagnation_session_count < 2 on the active item) | `DISPATCH_RESEARCH` | `Dispatch(WorkRequest(role="research", payload=<compile_mathematical_directive output hash>))` |
+| `ARCHITECT_SYNTHESIS` (admission complete; architect round mid-flight) | `DISPATCH_ARCHITECT` | `Dispatch(WorkRequest(role="maintenance", payload=<compile_architecture_directive output hash>))` |
+| `ARCHITECTURE_REVIEW_REQUIRED` (admission pending; stagnation trigger fired) | `ARCHITECTURE_REVIEW_REQUIRED` | `Wait(reason_code="architecture_review_required", reason=..., wake_on_source_change=True, retry_after_seconds=300)` |
+| Any other (no eligible active item) | `NO_ELIGIBLE_WORK` | `Wait(reason_code="no_eligible_work", wake_on_source_change=True)` |
 
-The supervisor (pi_monitor) never learns what "stagnation",
-"architecture review", or "role" means. It sees one
-`SourceDecision` per cycle using the existing
-`Dispatch | Wait | OperatorRequired | Stop` vocabulary. The
-role appears only as a `WorkRequest.role` field (already in
-the wire schema per `@CTR-0001`).
+The wire `WorkRequest.role` values are drawn **exclusively**
+from pi_monitor's existing `RoleName` Literal
+(`default`/`primary`/`supporting`/`milestone`/`research`/
+`intake`/`review`/`maintenance`). The math-internal
+`MATHEMATICAL_RESEARCHER` / `MATHEMATICAL_ARCHITECT` are
+`RoleProfileName` values that gate the directive compiler
+input — they are NEVER placed on the wire. The supervisor
+(pi_monitor) never learns what "stagnation",
+"architecture review", or "role" means in this context. It
+sees one `SourceDecision` per cycle using the existing
+`Dispatch | Wait | OperatorRequired | Stop` vocabulary.
 
 ## Rationale
 
@@ -140,13 +145,19 @@ the wire schema per `@CTR-0001`).
 
 1. **Add `mathlint.orchestration.live_source_snapshot.py`**:
    a thin pure wrapper that takes
-   `(repository, candidate_work_request, source_revision)`
-   and returns a typed `LiveSourceSnapshot` with verdict
-   kind `MATHEMATICAL_RESEARCHER_NEXT |
-   MATHEMATICAL_ARCHITECT_NEXT | ARCHITECTURE_REVIEW_REQUIRED
-   | NO_ELIGIBLE_WORK`, plus the role-conditioned
-   `MathematicalDirective` / `ArchitectureDirective`
-   payload.
+   `(math_project: MathProject, candidate: WorkRequest,
+   source_revision_unix: float)` and returns a typed
+   `LiveSourceSnapshot` with verdict kind
+   `DISPATCH_RESEARCH | DISPATCH_ARCHITECT |
+   ARCHITECTURE_REVIEW_REQUIRED | NO_ELIGIBLE_WORK`,
+   plus the byte-stable
+   ``compute_directive_content_hash(...)`` of the
+   role-conditioned `MathematicalDirective` /
+   `ArchitectureDirective` payload. The caller
+   (research-institution) is responsible for the
+   `MathProject.load(start=repository)` call so the
+   wrapper itself remains pure (same
+   `MathProject` + same `candidate` -> same snapshot).
 2. **No wire schema change.** No `SourceDecision` variant
    is added; no `WorkRequest` field is added; no
    `WIRE_VERSION` / `API_VERSION` bump.
@@ -159,20 +170,33 @@ the wire schema per `@CTR-0001`).
 ### In research-institution
 
 1. **Extend `select_next_work_for_supervisor`** to call
-   math's `consult_work_source_snapshot` after the
+   math's `consult(math_project, candidate)` after the
    program's `next_active_work` returns a candidate.
+   The OS performs the `MathProject.load(start=repository)`
+   and catches a `NoMathlintProjectError` so a mathlint-
+   unrelated repo falls back to existing dispatch behavior.
 2. **Translate** the snapshot into a typed `SourceDecision`
-   per the table above.
+   per the table above. When the verdict is a dispatch,
+   the OS uses ``dataclasses.replace(candidate, role=...)``
+   with a wire-allowed `RoleName` (``"research"`` /
+   ``"maintenance"`` / ...) so the wire `RoleName` Literal
+   in pi_monitor remains exact. Math's internal
+   ``MATHEMATICAL_RESEARCHER`` / ``MATHEMATICAL_ARCHITECT``
+   are present only inside the directive compiler's
+   `RoleProfileName`; they never cross the wire.
 3. **Audit log** the structured verdict (`verdict_kind`,
-   `target`, `stagnation_session_count`) on the
-   `source_decision` audit event.
+   `target`, `stagnation_session_count`,
+   `directive_content_hash`) on the `source_decision` audit
+   event.
 4. **Six acceptance tests** in
    `tests/test_source_decision_stagnation.py` cover the
-   0/1/2/3 no-delta cases plus the authority-boundary test
-   (no string like `"stagnation"` / `"architecture_review"`
-   / `"architect_role"` in the `kind` field of the
+   0/1/2/3 no-delta cases, the role-aware payload
+   compilation, and the authority-boundary test (no string
+   like `"stagnation"` / `"architecture_review"` /
+   `"MATHEMATICAL_RESEARCHER"` in the `kind` field of the
    `SourceDecision` envelope that crosses the supervisor
-   boundary).
+   boundary; wire `role` remains within the existing
+   `RoleName` Literal).
 
 ### In pi_monitor
 
