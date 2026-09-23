@@ -542,6 +542,13 @@ literal under `src/` is a code smell; the fix is to
 refactor (extract a generic term, move the example to a
 docstring outside `src/`, etc.), not to grandfather.
 
+The check was extended in commit `9ba4d48` to also flag
+``research_institution`` literals — the audit doc §4
+noted that "RI is also a project" and pi_monitor's
+stable surface shouldn't name it either. The sibling
+BC-4 check (tests/) was extended the same way for
+consistency.
+
 This check is the durable enforcement of `@ADR-0092`
 going forward. After commits 2 + BC-5 land, any future
 reintroduction of program literals in pi_monitor src
@@ -586,7 +593,7 @@ After commits 1–5 + BC-5, the cross-repo wire-canonicalization audit is comple
 | Kaplansky's direct pi_monitor imports | `from pi_monitor.work.work_source import ...` in 3 places | All 3 import via `mathlint.protocol.wire_types` |
 | Kaplansky's duplicate `ExecutionReport` readers | Local Pydantic + dataclass (modeled the on-disk JSONL shape, not the wire frame) | Replaced with a thin `LegacyCompatibleReport` wrapper that delegates core fields to `ExecutionReportWireModel` (via math facade); preserves legacy `ts` field fallback |
 | BC-4 (pi_monitor tests) | Scans `tests/` for program-identity literals | Wired into institution gate's `repo-boundary` check |
-| BC-5 (pi_monitor src/) | Not scanned | New static check; wired into institution gate alongside BC-4 |
+| BC-5 (pi_monitor src/) | Not scanned | New static check; wired into institution gate alongside BC-4. Extended to flag `research_institution` literals (the audit doc §4 noted "RI is also a project"). |
 | AGENTS.md exempt-file documentation | Implicit grandfather | Explicit carve-out for `tests/mathlint_fixture/`, `tests/static/`, and BC-5's no-grandfather policy for `src/` |
 | Deprecated math `_deprecated_launcher/reports.py` | Reads on-disk JSONL shape | Not deleted; deprecated namespace retirement is tracked separately per `@INV-0086` |
 | Cross-repo TYPE_CHECKING exceptions (math → RI) | 2 hits (pre-existing) | RESOLVED (commit `a207044`); math now imports `SourceDecision` from pi_monitor (the canonical wire owner) instead of RI (the OS layer). |
