@@ -8,7 +8,7 @@ related:
   - @ADR-0006-research-institution-scope
   - @ADR-0007-research-institution-owns-work-source-provider
   - @ADR-0011-stagnation-handling-is-a-source-decision
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
   - @CTR-0001-work-sources-and-runtimes-exchange-revisioned-execution-facts  (pi_monitor)
   - @ADR-0014-execution-authority-boundary     (pi_monitor)
 scope: research_institution, math-engine, pi_monitor
@@ -217,7 +217,7 @@ attempts 5+   → horizon admission completes (architect
 
 - `@ADR-0011-stagnation-handling-is-a-source-decision` —
   the durable ADR this invariant anchors.
-- `@CTR-0095-live-source-snapshot-contract` — the math-side
+- `@CTR-0100-live-source-snapshot-contract` — the math-side
   wrapper's typed contract.
 - `@CTR-0001-work-sources-and-runtimes-exchange-revisioned-execution-facts`
   (pi_monitor) — the `SourceDecision` vocabulary.

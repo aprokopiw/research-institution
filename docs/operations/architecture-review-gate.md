@@ -8,7 +8,7 @@ related:
   - @ADR-0007-research-institution-owns-work-source-provider
   - @ADR-0011-stagnation-handling-is-a-source-decision
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
   - docs/operations/plan-013-live-supervisor-authority.md
   - docs/concepts/cross-repo-decision-boundary.md
 date: 2026-09-20
@@ -159,7 +159,7 @@ without parsing roadmap output. That ask was
 **That ask is now superseded.** The new flow is
 `@ADR-0011-stagnation-handling-is-a-source-decision`: the
 source asks math directly via the
-`consult_work_source_snapshot` wrapper (`@CTR-0095`), so the
+`consult_work_source_snapshot` wrapper (`@CTR-0100`), so the
 operator-decision CLI path is no longer needed. The
 math-side implementation lands in math; the source-side
 translator lands in research-institution; no kernel CLI
@@ -242,7 +242,7 @@ These docs were updated in PR-A:
   `@ADR-0007-mathlint-architect-review-program-flag`.
 - `@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult` —
   the durable invariant anchoring the fix.
-- `@CTR-0095-live-source-snapshot-contract` — the math-side
+- `@CTR-0100-live-source-snapshot-contract` — the math-side
   consult adapter's typed contract.
 - `docs/operations/plan-013-live-supervisor-authority.md` —
   the unified plan.

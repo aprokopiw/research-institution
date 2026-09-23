@@ -43,7 +43,7 @@ Non-responsibilities:
 
 Contracts:
 - @CTR-0094-work-source-provider-dispatch-envelope
-- @CTR-0095-live-source-snapshot-contract (plan-013)
+- @CTR-0100-live-source-snapshot-contract (plan-013)
 - @ADR-0007-research-institution-owns-work-source-provider
 - @ADR-0011-stagnation-handling-is-a-source-decision (plan-013)
 - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult (plan-013)

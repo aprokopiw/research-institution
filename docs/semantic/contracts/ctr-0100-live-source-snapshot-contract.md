@@ -1,5 +1,5 @@
 ---
-id: CTR-0095
+id: CTR-0100
 kind: contract
 status: drafted
 title: Live source snapshot — math-side consult adapter for the source-decision flow
@@ -16,7 +16,7 @@ parties:
   - pi_monitor  (consumes the resulting SourceDecision; unchanged)
 ---
 
-# CTR-0095: Live source snapshot — math-side consult adapter for the source-decision flow
+# CTR-0100: Live source snapshot — math-side consult adapter for the source-decision flow
 
 ## Purpose
 
@@ -246,7 +246,7 @@ def consult(
 - ``tests/test_source_decision_stagnation.py`` (research-
   institution) — six acceptance tests for the translation table.
 - ``tests/test_wire_schema_unchanged.py`` (research-institution) —
-  the wire schema is byte-identical to pre-CTR-0095; no new
+  the wire schema is byte-identical to pre-CTR-0100; no new
   ``SourceDecision`` variants; ``WorkRequest.role`` values remain
   inside pi_monitor's existing ``RoleName`` Literal.
 - ``tests/integration/test_wire_protocol_event_union.py`` (math)

@@ -39,7 +39,7 @@ says "to read `@ADR-0091`, look at `pi_monitor/docs/semantic/adr/...`".
 | `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision (supersedes `@ADR-0009`) |
 | `@CTR-0088` | `research-institution/docs/semantic/contracts/` | catalog schema contract |
 | `@CTR-0094` | `research-institution/docs/semantic/contracts/` | work-source provider dispatch envelope |
-| `@CTR-0095` | `research-institution/docs/semantic/contracts/` | live-source snapshot — math-side consult adapter for source-decision flow |
+| `@CTR-0100` | `research-institution/docs/semantic/contracts/` | live-source snapshot — math-side consult adapter for source-decision flow |
 | `@INV-0093` | `research-institution/docs/semantic/invariants/` | institution green gate is canonical wiring evidence |
 | `@INV-0094` | `research-institution/docs/semantic/invariants/` | no-delta loop is broken by source-side stagnation consult, not by supervisor-side circuit |
 

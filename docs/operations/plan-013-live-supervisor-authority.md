@@ -11,7 +11,7 @@ related:
   - @ADR-0007-research-institution-owns-work-source-provider
   - @ADR-0011-stagnation-handling-is-a-source-decision
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
   - @CTR-0094-work-source-provider-dispatch-envelope
   - @CTR-0088-catalog-schema-contract
   - @INV-0093-institution-green-gate-is-canonical-wiring-evidence
@@ -68,7 +68,7 @@ that split for three reasons:
    the same footgun armed for the next agent.
 2. **The doc pass needs the fix's vocabulary.** `@INV-0094`
    introduces "stagnation consult" as a durable concept;
-   `@CTR-0095` introduces "live source snapshot" as a
+   `@CTR-0100` introduces "live source snapshot" as a
    typed contract; `@ADR-0011` introduces "stagnation
    handling is a source decision" as a cross-repo
    principle. The doc pass can't reference anchors that
@@ -178,7 +178,7 @@ policy / auth / billing per FR-043.
 | `kaplansky/src/kaplansky/work_selection.py` | Drop `_build_history_block`, `_render_directive`, `_list_recent_attempts`, `_parse_attempt_frontmatter`, `_split_frontmatter`, `_extract_section`, `_extract_list_section`, `KAPLANSKY_ROADMAP_ITEM_WITH_HISTORY_SCHEMA`, `_MAX_PRIOR_ATTEMPTS_IN_HISTORY`, `_FAILURE_MODE_QUOTE_CHARS`. | ✅ Reverted (commit `11e8162`) |
 | `~/.config/mathlint/local-pi-monitor.toml [rate_limits]` | Restore Plus-plan ballpark caps (`max_tokens_per_1m=500000`, `max_tokens_per_10m=3000000`, `max_tokens_per_1h=3500000`, `max_tokens_per_24h=4000000`). | ✅ Reverted (manual) |
 | `research-institution/docs/semantic/adr/cross-repo-requests/adr-0009-*` | Mark `superseded`; body annotated "this ADR's authority boundary was wrong". | ✅ Done in this session |
-| `research-institution/docs/semantic/SEMANTIC_REGISTRY.md` | Add new anchors (INV-0094, ADR-0011, CTR-0095) and the cross-repo-request subdirectory split. | ✅ Done in this session |
+| `research-institution/docs/semantic/SEMANTIC_REGISTRY.md` | Add new anchors (INV-0094, ADR-0011, CTR-0095 [since renamed to CTR-0100 to break ID collision with math's `@CTR-0095-live-run-receipt-audit-chain-binding`, see pass-3 followup]) and the cross-repo-request subdirectory split. | ✅ Done in this session + ID-collision followup |
 
 Green gate is GREEN across all 7 tiers. No live supervisor is running.
 
@@ -228,7 +228,7 @@ exercising the wrapper against a synthetic kaplansky-style repo with
 0, 1, 2, 3 no-delta attempts.
 
 **No wire schema change. No `SourceDecision` variant. No `WIRE_VERSION`
-bump.** Per `@CTR-0095-live-source-snapshot-contract`:
+bump.** Per `@CTR-0100-live-source-snapshot-contract`:
 - Purity property test.
 - No-mutation property test (snapshot deltas ledger before and after).
 - Verdict vocabulary property test (4 closed kinds).
@@ -374,7 +374,7 @@ durable documents assert different authority.
   primary content (per `@INV-0094`).
 - Document the **legacy operator-decision flow** as
   historical context (per the withdrawn `@ADR-0009`).
-- Cite `@ADR-0011`, `@INV-0094`, `@CTR-0095`.
+- Cite `@ADR-0011`, `@INV-0094`, `@CTR-0100`.
 - Replace the `python -m research_institution start kaplansky --skip-gate`
   override docs with `dispatcher.refuses_to_launch_when_architecture_review_pending`
   semantics (the operator override stays for the rare case
@@ -442,7 +442,7 @@ canonical role-conditioned directive compiler. There is
 
 **Fix:** Add `math/src/mathlint/exchange/README.md` (one
 page) covering all four points, citing `@ADR-0011`,
-`@CTR-0095`, and the role-conditioned
+`@CTR-0100`, and the role-conditioned
 `ROLE_PERMISSION_MATRIX`.
 
 ### 3.4 — RC3: poor verification locality
@@ -487,7 +487,7 @@ needs both the mental model AND the contract surface
 in one read. Adding a "if you only read one doc,
 read this" pointer is too thin; better to add a
 "see also" section that points at the canonical
-contracts (`@ADR-0011`, `@INV-0094`, `@CTR-0095`,
+contracts (`@ADR-0011`, `@INV-0094`, `@CTR-0100`,
 `@CTR-0001`, `@CTR-0003`, `@ADR-0014-execution-authority-boundary`).
 
 **Fix:** Update `docs/concepts/architecture.md` with a
@@ -602,7 +602,7 @@ state:
 - **Non-responsibilities:** mutate canonical state, run
   the math-side supervisor cycle, launch workers,
   make policy decisions.
-- **Contracts:** `@CTR-0095`, `@CTR-0021`,
+- **Contracts:** `@CTR-0100`, `@CTR-0021`,
   `@ADR-0011`, `@INV-0094`.
 
 A 6-line module docstring with these three sections
@@ -880,7 +880,7 @@ the durable record.
 | 4 | **Wire-protocol conformance** | `tests/integration/test_wire_protocol_event_union.py` (math) + `tests/test_wire_schema_unchanged.py` (research-institution) both pass; the wire schema is byte-identical to pre-plan-013. |
 | 5 | **Authority boundary** | `tests/test_supervisor_authority_boundary_is_respected.py` (research-institution) passes; no `SourceDecision` variant outside `Dispatch \| Wait \| OperatorRequired \| Stop`; no `"stagnation"` / `"architecture_review"` / `"architect_role"` strings in the `kind` field that crosses the supervisor boundary. |
 | 6 | **Revert precondition** | `git status` in kaplansky and research-institution is clean of the 2026-09-19 uncommitted patches; `~/.config/mathlint/local-pi-monitor.toml [rate_limits]` is at Plus-plan ballpark. |
-| 7 | **Documentation wiring** | Every durable doc landed in PR-A is referenced by `@ADR-0011`, `@INV-0094`, or `@CTR-0095`; `docs/operations/architecture-review-gate.md` is rewritten; `docs/concepts/cross-repo-decision-boundary.md` is canonical; `math/src/mathlint/exchange/README.md` is canonical; `math/docs/concepts/live-vs-iteration.md` is canonical. |
+| 7 | **Documentation wiring** | Every durable doc landed in PR-A is referenced by `@ADR-0011`, `@INV-0094`, or `@CTR-0100`; `docs/operations/architecture-review-gate.md` is rewritten; `docs/concepts/cross-repo-decision-boundary.md` is canonical; `math/src/mathlint/exchange/README.md` is canonical; `math/docs/concepts/live-vs-iteration.md` is canonical. |
 | 8 | **Semantic registry updated** | `docs/semantic/SEMANTIC_REGISTRY.md` includes the three new anchors; `@ADR-0009` is marked superseded; `@ADR-0007` cross-references are rephrased. |
 | 9 | **`@ADR-0009` marked withdrawn** | Status line says "Superseded by `@ADR-0011`"; the file is kept as historical postmortem. |
 | 10 | **Live smoke** | `nohup mathlint live-run --config ~/.config/mathlint/local-pi-monitor.toml --confirm-live &` launches successfully; the supervisor polls `decide()` for the first 5 minutes and observes zero no-delta re-ack loops. Operator-runnable evidence recorded in the closure-audit doc. |
@@ -925,7 +925,7 @@ Stop and escalate to the user if:
 adapter → research-institution-side translator) plus
 five doc-coherence upgrades and six semantic-repo
 upgrades, all anchored on three durable records
-(`@ADR-0011`, `@INV-0094`, `@CTR-0095`), that fix the
+(`@ADR-0011`, `@INV-0094`, `@CTR-0100`), that fix the
 no-delta loop by composing math's existing kernel
 machinery into the source-decision flow without
 changing `pi_monitor`, `kaplansky`, or the wire

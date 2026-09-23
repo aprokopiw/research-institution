@@ -13,7 +13,7 @@ related:
   - ADR-0006
   - @INV-0093
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
 origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 ---
 

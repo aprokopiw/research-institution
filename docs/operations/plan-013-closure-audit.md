@@ -10,7 +10,7 @@ related:
   - @ADR-0011-stagnation-handling-is-a-source-decision
   - @ADR-0097-live-source-snapshot-consult-adapter (math)
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
   - @ADR-0007-research-institution-owns-work-source-provider
   - @ADR-0014-execution-authority-boundary      (pi_monitor)
   - @ADR-0014-mathlint-does-not-import-program-named-modules  (math)
@@ -36,7 +36,7 @@ related:
 Plan-013 fixes the no-delta loop correctly by composing
 math's existing kernel machinery into the OS-level work
 source. The fix touches 2 repos (math + research-institution)
-and 3 durable records (`@ADR-0011`, `@INV-0094`, `@CTR-0095`).
+and 3 durable records (`@ADR-0011`, `@INV-0094`, `@CTR-0100`).
 **Pi_monitor is byte-identical pre/post plan-013. Kaplansky
 is byte-identical. The wire schema is byte-identical.**
 
@@ -238,7 +238,7 @@ Verified:
 
 ```text
 $ git -C /Users/erinprokopiw/Documents/andrei/research-institution \
-    grep -l "@ADR-0011\|@INV-0094\|@CTR-0095\|@ADR-0097" \
+    grep -l "@ADR-0011\|@INV-0094\|@CTR-0100\|@ADR-0097" \
     docs/semantic/SEMANTIC_REGISTRY.md
 docs/semantic/SEMANTIC_REGISTRY.md
 ```
@@ -274,7 +274,7 @@ related:
   - ADR-0006
   - @INV-0093
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
-  - @CTR-0095-live-source-snapshot-contract
+  - @CTR-0100-live-source-snapshot-contract
 origin-postmortem: @INV-0093 (mathlint institution-gate invariant)
 ---
 ```
@@ -378,7 +378,7 @@ The math-side ledger names the math-side sibling ADR
 (`@ADR-0097-live-source-snapshot-consult-adapter`, status
 `proposed`), the cross-repo request
 (`@ADR-0011-stagnation-handling-is-a-source-decision`),
-the cross-repo contract (`@CTR-0095-live-source-snapshot-contract`),
+the cross-repo contract (`@CTR-0100-live-source-snapshot-contract`),
 and the invariant
 (`@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult`).
 
@@ -432,5 +432,5 @@ per math's `AGENTS.md` sanctioned exception class #5.
 - `docs/concepts/cross-repo-decision-boundary.md` — the
   supervisor / judge / source / worker four-way decision
   inventory.
-- `@ADR-0011`, `@ADR-0097`, `@INV-0094`, `@CTR-0095` — the
+- `@ADR-0011`, `@ADR-0097`, `@INV-0094`, `@CTR-0100` — the
   spine of plan-013.

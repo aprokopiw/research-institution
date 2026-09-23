@@ -293,7 +293,7 @@ and `WorkerRuntime` remain as-is. The boundary is preserved.
   (pi_monitor) — the source-decision vocabulary.
 - `@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult`
   — the durable invariant this ADR anchors.
-- `@CTR-0095-live-source-snapshot-contract` — the
+- `@CTR-0100-live-source-snapshot-contract` — the
   math-side wrapper's typed contract.
 - `docs/operations/plan-013-live-supervisor-authority.md` —
   the full plan with the 14-gate closure audit.
