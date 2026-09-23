@@ -526,7 +526,13 @@ This audit document lives at the repo root: `research-institution/cross-repo-typ
 - `math/tests/static/test_no_program_named_modules.py` — math src/ has no program-name literals (BC-1 part 1).
 - `math/tests/static/test_no_program_named_modules_in_tests.py` — math tests/scripts have no program-name literals (BC-1 part 2).
 - `pi_monitor/tests/static/test_no_program_identity_in_fixtures.py` — pi_monitor tests have no program-identity literals (BC-4).
+- `pi_monitor/tests/static/test_no_program_identity_in_src.py` — pi_monitor src/ has no program-identity literals (BC-5).
 - `research-institution/research_institution/gates/aggregate.py::_repo_boundary_check` — runs BC-1 (math tests/scripts) + BC-4 (pi_monitor tests) + BC-5 (pi_monitor src/); reports `[repo-boundary] ok` or RED.
+
+Both BC-4 and BC-5 were extended in commit `9ba4d48` to
+also flag `research_institution` literals — the audit doc §4
+noted that "RI is also a project" and pi_monitor's stable
+surface shouldn't name it either.
 
 `@ADR-0092` Literals on the pi_monitor side (in src/, tests/, and the wire-envelope docstrings) are now caught by the BC-4 + BC-5 pair: BC-4 scans `pi_monitor/tests/` and BC-5 scans `pi_monitor/src/`. Before BC-5 landed (commit `94e1576`), the Literals in `work_source.py:173-179, 194-198` were not caught by any static check — that gap is now closed.
 
