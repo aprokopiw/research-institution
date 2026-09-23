@@ -78,6 +78,44 @@ observations tagged with the previous fingerprint the moment
 the cap changes. The worker resumes as soon as the new cap
 is loaded.
 
+## plan-013 source-decision audit fields (post-merge)
+
+The OS-level work source (`select_next_work_for_supervisor`)
+emits three new structured fields on the `source_decision`
+audit event after plan-013 lands:
+
+- `verdict_kind` — one of `DISPATCH_RESEARCH`,
+  `DISPATCH_ARCHITECT`, `ARCHITECTURE_REVIEW_REQUIRED`,
+  `NO_ELIGIBLE_WORK`. Maps to the math kernel's `ActionKind`
+  translated into the OS-level envelope.
+- `target` — the operation_id under consult (e.g. `K4-...`).
+- `stagnation_session_count` — the number of substantial
+  `NO_ROOT_RELEVANT_DELTA` sessions observed for the target
+  (0..N).
+
+Operator grep recipes (post-merge):
+
+- `pi-monitor journal -f | grep '"event":"source_decision"'` —
+  every poll cycle.
+- `pi-monitor journal -f | grep '"verdict_kind":"ARCHITECTURE_REVIEW_REQUIRED"'` —
+  the no-delta loop is paused for the architect horizon to
+  complete admission; nothing to do until the kernel's
+  admission commit lands.
+- `pi-monitor journal -f | grep '"verdict_kind":"DISPATCH_ARCHITECT"'` —
+  the architect round is mid-flight; the wire `role`
+  becomes `maintenance`; the worker carries the
+  `math_directive_content_hash` payload field as the math
+  side's typed identity.
+- `pi-monitor journal -f | grep '"reason_code":"architecture_review"'` —
+  wait reasons emitted under stagnation.
+
+The wire `role` values stay inside pi_monitor's existing
+8-value `RoleName` Literal (`default | primary | supporting |
+milestone | research | intake | review | maintenance`);
+math-internal `MATHEMATICAL_RESEARCHER` /
+`MATHEMATICAL_ARCHITECT` `RoleProfileName` values are NEVER
+on the wire (`@ADR-0011` + `@INV-0094`).
+
 **Goal of this doc:** a fresh operator on a fresh machine can
 get `pi-monitor` running the Kaplansky research program end-to-end
 in three commands. Each command is reproducible; the verdict is
