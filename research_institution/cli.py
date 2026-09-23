@@ -26,7 +26,9 @@ from pathlib import Path
 import typer
 
 from research_institution.catalog import Program, load_catalog
+from research_institution.dispatcher import MATHLINT_BIN
 from research_institution.contracts import (
+    ExitCode,
     GateVerdictStatus,
     TaskKind,
     gate_verdict_from_task_kind,
@@ -169,7 +171,7 @@ class GateVerdict:
 
 
 def check_gate(
-    prog: Program, mathlint_bin: str = "mathlint", cwd: Path | None = None
+    prog: Program, mathlint_bin: str = MATHLINT_BIN, cwd: Path | None = None
 ) -> GateVerdict:
     """Probe the program-supplied work-selection callable and return
     the architecture-review gate verdict.
@@ -221,12 +223,13 @@ def check_gate(
     return Dispatcher().read_gate(prog, mathlint_bin=mathlint_bin, cwd=cwd)
 
 
-# Exit code for `research start` when the gate is closed.
-EXIT_GATE_CLOSED = 5
-
-# Exit code for `research start` when a supervisor is already
-# running for this config (idempotent refusal; see supervisor probe).
-EXIT_ALREADY_RUNNING = 6
+#: Exit codes for the dispatcher CLI. Mirrored from
+#: :class:`research_institution.contracts.ExitCode` so the canonical
+#: vocabulary (used by operators, CI, tests) stays the single source
+#: of truth. Typer's ``Exit(code=)`` accepts int — coerce from the
+#: StrEnum at the call site.
+EXIT_GATE_CLOSED = int(ExitCode.GATE_CLOSED)
+EXIT_ALREADY_RUNNING = int(ExitCode.ALREADY_RUNNING)
 
 
 @app.command("list")

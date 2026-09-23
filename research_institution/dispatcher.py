@@ -51,7 +51,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import Final, Protocol, TypedDict
 from collections.abc import Callable
 
 from research_institution.catalog import Program
@@ -191,6 +191,13 @@ class SubprocessPolicy:
 
 DEFAULT_POLICY = SubprocessPolicy()
 
+#: Default `mathlint` executable name. The dispatcher invokes a sibling
+#: repo's CLI by name (resolved via PATH); the literal is the canonical
+#: module name as installed by the math kernel's pyproject.toml.
+MATHLINT_BIN: Final[str] = "mathlint"
+#: Default `pi-monitor` executable name.
+PI_MONITOR_BIN: Final[str] = "pi-monitor"
+
 
 @dataclass(frozen=True, slots=True)
 class Dispatcher:
@@ -217,7 +224,7 @@ class Dispatcher:
     def read_gate(
         self,
         prog: Program,
-        mathlint_bin: str = "mathlint",
+        mathlint_bin: str = MATHLINT_BIN,
         cwd: Path | None = None,
         timeout_seconds: float | None = None,
     ) -> GateVerdict:
@@ -371,7 +378,7 @@ class Dispatcher:
     # -----------------------------------------------------------------------
     def run_live(
         self,
-        mathlint_bin: str = "mathlint",
+        mathlint_bin: str = MATHLINT_BIN,
         cwd: Path | None = None,
         extra_args: Sequence[str] = (),
         extra_env: dict[str, str] | None = None,
@@ -401,7 +408,7 @@ class Dispatcher:
     # -----------------------------------------------------------------------
     def stop_research(
         self,
-        mathlint_bin: str = "mathlint",
+        mathlint_bin: str = MATHLINT_BIN,
         cwd: Path | None = None,
         timeout_seconds: float | None = None,
     ) -> SubprocessResult:
@@ -424,7 +431,7 @@ class Dispatcher:
     # -----------------------------------------------------------------------
     def read_status(
         self,
-        mathlint_bin: str = "mathlint",
+        mathlint_bin: str = MATHLINT_BIN,
         cwd: Path | None = None,
         timeout_seconds: float | None = None,
     ) -> SubprocessResult:
@@ -453,7 +460,7 @@ class Dispatcher:
         self,
         config_path: Path,
         start_script: Path,
-        pi_monitor_bin: str = "pi-monitor",
+        pi_monitor_bin: str = PI_MONITOR_BIN,
         interval_seconds: float = 2.0,
         extra_env: dict[str, str] | None = None,
         timeout_seconds: float | None = None,
