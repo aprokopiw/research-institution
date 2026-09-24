@@ -2,9 +2,19 @@
 
 The headline is a pure-function read of the pi_monitor supervisor's
 ``health.json`` + ``latest.json`` state files. The parser classifies
-state into one of the six closed ``ProgramState`` values (running,
-circuit-open, degraded, gate-closed, stopped, no-supervisor) and
-formats a one-line summary.
+state into one of the eleven closed ``ProgramState`` values
+(service-installed, running, rate-deferred, source-wait,
+operator-paused, terminal-stop, circuit-open, gate-closed,
+degraded, stopped, no-supervisor) and formats a one-line summary.
+
+The new states the autonomous-research brief introduces are
+exercised at the bottom of the file:
+
+* ``RATE_DEFERRED`` — ``health.next_eligible_unix > 0``.
+* ``SOURCE_WAIT`` — ``health.source.last_kind == "wait"``.
+* ``OPERATOR_PAUSED`` — ``health.source_paused``.
+* ``TERMINAL_STOP`` — ``health.stopped`` or supervisor PID
+  dead or staleness boundary exceeded.
 
 These tests pin the classification logic with synthetic state
 files in a tmp_path fixture; no live supervisor is required.
@@ -159,7 +169,7 @@ def test_headline_stopped_after_5_minutes(tmp_path: Path) -> None:
     assert boundary.state == "running"
     # One second past the boundary, "stopped".
     past = read_status_headline("kaplansky", tmp_path, now=NOW + 301.0)
-    assert past.state == "stopped"
+    assert past.state == "terminal-stop"
 
 
 def test_headline_stopped_when_supervisor_pid_is_dead(tmp_path: Path) -> None:
@@ -179,7 +189,7 @@ def test_headline_stopped_when_supervisor_pid_is_dead(tmp_path: Path) -> None:
     _write_json(tmp_path / "health.json", health)
     _write_json(tmp_path / "latest.json", _running_latest(NOW))
     h = read_status_headline("kaplansky", tmp_path, now=NOW)
-    assert h.state is ProgramState.STOPPED
+    assert h.state is ProgramState.TERMINAL_STOP
 
 
 def test_headline_no_supervisor_missing_dir(tmp_path: Path) -> None:
@@ -229,3 +239,126 @@ def test_format_headline_no_uptime() -> None:
         )
     )
     assert out == "kaplansky: no-supervisor"
+
+
+# ---------------------------------------------------------------------------
+# New states (autonomous-research brief Section E visibility)
+# ---------------------------------------------------------------------------
+
+
+def test_headline_rate_deferred(tmp_path: Path) -> None:
+    """A positive ``next_eligible_unix`` is classified as RATE_DEFERRED.
+
+    The deadline persists on the headline so the operator can
+    read "when will the supervisor re-ask" without parsing
+    the audit log or the rate-limit ledger.
+    """
+    health = _running_health(NOW).model_copy(
+        update={
+            "next_eligible_unix": NOW + 3600.0,
+            "source_paused": False,
+            "stopped": False,
+        }
+    )
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(NOW))
+    h = read_status_headline("kaplansky", tmp_path, now=NOW)
+    assert h.state is ProgramState.RATE_DEFERRED
+    assert h.wake_unix == NOW + 3600.0
+    assert h.wake_trigger == "rate_defer"
+
+
+def test_headline_source_wait(tmp_path: Path) -> None:
+    """A source Wait is classified as SOURCE_WAIT.
+
+    The ``wait_next_ask_unix`` from the supervisor's source
+    snapshot becomes the headline's ``wake_unix``; the wake
+    trigger is ``source_wait``.
+    """
+    health = _running_health(NOW).model_copy(
+        update={
+            "next_eligible_unix": 0.0,
+            "source_paused": False,
+            "stopped": False,
+            "source": {
+                "last_kind": "wait",
+                "paused": False,
+                "wait_next_ask_unix": NOW + 60.0,
+                "wait_wake_on_move": True,
+            },
+        }
+    )
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(NOW))
+    h = read_status_headline("kaplansky", tmp_path, now=NOW)
+    assert h.state is ProgramState.SOURCE_WAIT
+    assert h.wake_unix == NOW + 60.0
+    assert h.wake_trigger == "source_wait"
+
+
+def test_headline_operator_paused(tmp_path: Path) -> None:
+    """A capability-gated OperatorRequired pause is OPERATOR_PAUSED."""
+    health = _running_health(NOW).model_copy(
+        update={
+            "next_eligible_unix": 0.0,
+            "source_paused": True,
+            "stopped": False,
+        }
+    )
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(NOW))
+    h = read_status_headline("kaplansky", tmp_path, now=NOW)
+    assert h.state is ProgramState.OPERATOR_PAUSED
+
+
+def test_headline_terminal_stop_intentional(tmp_path: Path) -> None:
+    """``health.stopped = True`` (intentional stop) is TERMINAL_STOP,
+    not STOPPED (the legacy dead-supervisor state)."""
+    health = _running_health(NOW).model_copy(
+        update={
+            "next_eligible_unix": 0.0,
+            "source_paused": False,
+            "stopped": True,
+        }
+    )
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(NOW))
+    h = read_status_headline("kaplansky", tmp_path, now=NOW)
+    assert h.state is ProgramState.TERMINAL_STOP
+
+
+def test_headline_last_completed_cycle(tmp_path: Path) -> None:
+    """The headline carries the wall-clock time of the last
+    completed cycle so the operator can read progress at a
+    glance.
+    """
+    cycle_unix = NOW - 60.0
+    health = _running_health(NOW).model_copy(
+        update={
+            "next_eligible_unix": 0.0,
+            "source_paused": False,
+            "stopped": False,
+        }
+    )
+    health.execution.outcome_unix = cycle_unix
+    _write_json(tmp_path / "health.json", health)
+    _write_json(tmp_path / "latest.json", _running_latest(NOW))
+    h = read_status_headline("kaplansky", tmp_path, now=NOW)
+    assert h.last_completed_cycle_unix == cycle_unix
+
+
+def test_format_headline_includes_wake_when_deferred() -> None:
+    """The headline renders the wake time + trigger when active."""
+    h = StatusHeadline(
+        program="kaplansky",
+        state=ProgramState.RATE_DEFERRED,
+        uptime_seconds=120.0,
+        last_action="",
+        wake_unix=NOW + 3600.0,
+        wake_trigger="rate_defer",
+        service_installed=False,
+        last_completed_cycle_unix=0.0,
+    )
+    out = format_headline(h)
+    assert "next ask:" in out
+    assert "rate_defer" in out

@@ -49,7 +49,12 @@ class ProgramState(StrEnum):
     CI-detectable smell \u2014 the enum catches it at edit time.
     """
 
+    SERVICE_INSTALLED = "service-installed"
     RUNNING = "running"
+    RATE_DEFERRED = "rate-deferred"
+    SOURCE_WAIT = "source-wait"
+    OPERATOR_PAUSED = "operator-paused"
+    TERMINAL_STOP = "terminal-stop"
     CIRCUIT_OPEN = "circuit-open"
     GATE_CLOSED = "gate-closed"
     DEGRADED = "degraded"
@@ -79,12 +84,38 @@ class StatusHeadline:
     observation (or 0 if unknown). `last` is the last action
     summary string from the supervisor's `execution` block;
     empty if no action has been taken.
+
+    `wake_unix` is the wall-clock time the supervisor will next
+    ask the source (the rate-defer deadline under
+    ``wait_until_eligible``, or the wait policy's next-ask
+    time). ``0.0`` when no defer / wait is active.
+
+    `wake_trigger` names the wake source so the operator can
+    read ``state`` to understand *when* + *why* the next ask
+    will happen (``rate_defer`` / ``source_wait`` /
+    ``poll_backstop`` / ``backoff``). Empty when no defer is
+    active.
+
+    `service_installed` is True iff the LaunchAgent plist is
+    on disk under ``~/Library/LaunchAgents/<label>.plist``.
+    The classifier reports ``SERVICE_INSTALLED`` /
+    ``NO_SUPERVISOR`` based on this flag combined with the
+    supervisor liveness probe.
+
+    `last_completed_cycle_unix` is the wall-clock time of the
+    last completed research cycle (a finalized attempt with
+    a recorded outcome_unix). ``0.0`` when no cycle has
+    completed yet.
     """
 
     program: str
     state: ProgramState
     uptime_seconds: float
     last_action: str
+    wake_unix: float = 0.0
+    wake_trigger: str = ""
+    service_installed: bool = False
+    last_completed_cycle_unix: float = 0.0
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -149,7 +180,7 @@ def _classify(
         try:
             _os.kill(pid, 0)
         except (ProcessLookupError, PermissionError, OSError):
-            return ProgramState.STOPPED
+            return ProgramState.TERMINAL_STOP
     if health is not None:
         circuit = health.circuit
         if circuit.open or circuit.trip_count > 0:
@@ -158,6 +189,30 @@ def _classify(
             return ProgramState.DEGRADED
         if health.execution.outcome == OUTCOME_BLOCKED:
             return ProgramState.GATE_CLOSED
+        # Operator-pause wins over run/wait: a paused source
+        # stays paused until the operator control-channel
+        # ``resume`` clears it (INV-021 surface).
+        if health.source_paused:
+            return ProgramState.OPERATOR_PAUSED
+        # Intentional terminal stop (``state.stopped=True``) is
+        # distinct from a dead supervisor: the operator stopped
+        # it on purpose (or the source requested Stop); restart
+        # is operator-initiated.
+        if health.stopped:
+            return ProgramState.TERMINAL_STOP
+        # Timed rate-defer (under ``wait_until_eligible``) is
+        # the new state the brief introduces: the supervisor is
+        # alive but holding the next-ask at the rolling-window
+        # deadline. The deadline itself is read from
+        # ``health.next_eligible_unix`` (introduced in
+        # @INV-025 / @ADR-0026).
+        next_eligible = getattr(health, "next_eligible_unix", 0.0) or 0.0
+        if next_eligible > 0.0:
+            return ProgramState.RATE_DEFERRED
+        # Normal source wait: the source returned Wait and the
+        # supervisor is honoring ``wait_next_ask_unix``.
+        if health.source.last_kind == "wait":
+            return ProgramState.SOURCE_WAIT
     observed_unix: float | None = None
     if latest is not None:
         observed_unix = latest.observed_unix or None
@@ -167,7 +222,7 @@ def _classify(
         return ProgramState.NO_SUPERVISOR
     age = (now if now is not None else time.time()) - observed_unix
     if age > 300:  # 5 minutes
-        return ProgramState.STOPPED
+        return ProgramState.TERMINAL_STOP
     return ProgramState.RUNNING
 
 
@@ -248,12 +303,96 @@ def read_status_headline(
         state=_classify(health, latest, now=now),
         uptime_seconds=_uptime_seconds(latest, now=now),
         last_action=_last_action(health),
+        wake_unix=_wake_unix(health),
+        wake_trigger=_wake_trigger(health),
+        service_installed=_service_installed(program),
+        last_completed_cycle_unix=_last_completed_cycle_unix(health),
     )
 
 
+def _wake_unix(health: HealthPayload | None) -> float:
+    """Wall-clock time the supervisor will next ask the source.
+
+    Prefers ``next_eligible_unix`` (rate-defer deadline) when
+    positive; falls back to ``source.wait_next_ask_unix``
+    (wait policy). ``0.0`` when no defer / wait is active.
+    """
+    if health is None:
+        return 0.0
+    eligible = health.next_eligible_unix or 0.0
+    if eligible > 0.0:
+        return eligible
+    return health.source.wait_next_ask_unix or 0.0
+
+
+def _wake_trigger(health: HealthPayload | None) -> str:
+    """Name the wake source so the operator can read state.
+
+    ``rate_defer`` for a rate-window trip under
+    ``wait_until_eligible``; ``source_wait`` for a normal
+    source Wait; ``poll_backstop`` for the no-wake poll loop.
+    Empty when no defer / wait is active.
+    """
+    if health is None:
+        return ""
+    if (health.next_eligible_unix or 0.0) > 0.0:
+        return "rate_defer"
+    if health.source.last_kind == "wait":
+        return "source_wait"
+    return "poll_backstop"
+
+
+def _service_installed(program: str) -> bool:
+    """True iff the LaunchAgent plist is on disk.
+
+    Pure path check: ``~/Library/LaunchAgents/<label>.plist``
+    exists. The label is the program-owned
+    ``com.local.research-institution.<program>`` so two
+    programs never share a plist (INV-005).
+    """
+    from research_institution.cli import _PROGRAM_LAUNCHD_LABEL
+
+    label = _PROGRAM_LAUNCHD_LABEL.get(program)
+    if label is None:
+        return False
+    return (Path.home() / "Library" / "LaunchAgents" / f"{label}.plist").is_file()
+
+
+def _last_completed_cycle_unix(health: HealthPayload | None) -> float:
+    """Wall-clock time of the last completed research cycle.
+
+    A "completed cycle" is a finalized attempt with a
+    recorded ``execution.outcome_unix``. ``0.0`` when no
+    cycle has completed yet.
+    """
+    if health is None:
+        return 0.0
+    return health.execution.outcome_unix or 0.0
+
+
 def format_headline(headline: StatusHeadline) -> str:
-    """Format one StatusHeadline as a single-line string for `typer.echo`."""
+    """Format one StatusHeadline as a single-line string for `typer.echo`.
+
+    The new fields the brief introduces are rendered when set:
+
+      * ``service-installed`` flag is shown as a prefix
+        (``installed: <label>``) when the plist is on disk,
+        so the operator can see deployment + liveness at a
+        glance.
+      * ``wake_unix`` is rendered as
+        ``next ask: <unix> (<delta from now>, trigger=<wake_trigger>)``
+        whenever a defer or wait is active.
+      * ``last_completed_cycle_unix`` is rendered as
+        ``last cycle: <unix> (<delta from now>)`` when
+        non-zero.
+    """
     parts = [f"{headline.program}: {headline.state}"]
+    if headline.service_installed:
+        from research_institution.cli import _PROGRAM_LAUNCHD_LABEL
+
+        label = _PROGRAM_LAUNCHD_LABEL.get(headline.program, "")
+        if label:
+            parts.append(f"[installed: {label}]")
     if headline.uptime_seconds > 0:
         # 1h21m shape; under 60s is just "<n>s".
         s = int(headline.uptime_seconds)
@@ -267,7 +406,21 @@ def format_headline(headline: StatusHeadline) -> str:
             else:
                 parts.append(f"({m}m)")
     if headline.last_action:
-        parts.append(f"\u2014 last: {headline.last_action}")
+        parts.append(f"— last: {headline.last_action}")
+    if headline.wake_unix > 0.0:
+        from datetime import datetime as _dt
+
+        when = _dt.fromtimestamp(headline.wake_unix).strftime("%Y-%m-%d %H:%M:%S")
+        parts.append(
+            f"[next ask: {when} (trigger={headline.wake_trigger or 'poll_backstop'})]"
+        )
+    if headline.last_completed_cycle_unix > 0.0:
+        from datetime import datetime as _dt
+
+        when = _dt.fromtimestamp(
+            headline.last_completed_cycle_unix
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        parts.append(f"[last cycle: {when}]")
     return " ".join(parts)
 
 

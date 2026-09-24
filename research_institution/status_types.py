@@ -99,6 +99,29 @@ class ExecutionStateSnapshot(_StatusWireMixin):
     active_key: str = ""
 
 
+class SourceSnapshot(_StatusWireMixin):
+    """Wire shape of the supervisor's source-decision state.
+
+    Mirrors ``state.source_*`` + ``source_last_kind`` on
+    pi_monitor's runtime state. The classifier branches on
+    ``last_kind == "wait"`` for the SOURCE_WAIT state and on
+    ``paused`` for the OPERATOR_PAUSED state. ``wait_next_ask_unix``
+    is the wall-clock time the supervisor will next ask the
+    source under the bounded wait policy (@CTR-0005); the
+    headline carries it as ``wake_unix`` so the operator can
+    read "when will it wake" from state.
+    """
+
+    last_kind: str = ""
+    paused: bool = False
+    pause_reason: str = ""
+    decision_unix: float = 0.0
+    reason: str = ""
+    reason_code: str = ""
+    wait_next_ask_unix: float = 0.0
+    wait_wake_on_move: bool = False
+
+
 class HealthPayload(_StatusWireMixin):
     """Wire shape of ``health.json`` as written by pi_monitor.
 
@@ -107,6 +130,21 @@ class HealthPayload(_StatusWireMixin):
     handle the missing-field case. ``supervisor_pid`` may be
     ``None`` when the test fixture wants to skip the liveness
     probe without setting a real PID.
+
+    The new fields the autonomous-research brief introduces:
+
+      * ``stopped`` — the supervisor's intentional-stop flag;
+        ``True`` means a deliberate operator / source stop
+        (terminal state; restart is operator-initiated).
+      * ``source_paused`` — capability-gated OperatorRequired
+        pause; the operator control-channel ``resume`` clears
+        it.
+      * ``source`` — typed snapshot of the source-decision
+        state (last kind, wait policy, paused flag).
+      * ``next_eligible_unix`` — persisted rate-defer deadline
+        (under ``on_exceeded = "wait_until_eligible"``). The
+        classifier reports ``RATE_DEFERRED`` whenever this
+        is positive.
     """
 
     supervisor_pid: int | None = None
@@ -116,6 +154,10 @@ class HealthPayload(_StatusWireMixin):
     execution: ExecutionStateSnapshot = Field(
         default_factory=ExecutionStateSnapshot
     )
+    stopped: bool = False
+    source_paused: bool = False
+    source: SourceSnapshot = Field(default_factory=SourceSnapshot)
+    next_eligible_unix: float = 0.0
 
 
 class LatestPayload(_StatusWireMixin):
