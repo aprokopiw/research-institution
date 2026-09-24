@@ -233,6 +233,11 @@ def correlate_cycles(
         # exists, the supervisor IS making subsequent decisions
         # (just without recording a source_decision entry
         # between cycles); accept the dispatch as evidence.
+        # The supervisor's poll cadence is
+        # ``[health].poll_seconds`` (default 120s); between
+        # cycles the supervisor may be quiet for that long.
+        # Treat ``< poll_seconds * 4`` after the terminal as
+        # "still in flight" rather than "stuck".
         next_decision = ""
         for event in _read_jsonl(audit_path):
             name = event.get("event")
@@ -249,6 +254,20 @@ def correlate_cycles(
                     event.get("kind") or ("dispatch" if name == "source_dispatch" else "")
                 )
                 break
+        # In-flight grace window: if no next decision yet but the
+        # cycle's events are well-formed and within
+        # ``poll_grace_seconds`` of the latest terminal, the cycle
+        # counts as COMPLETE-IN-FLIGHT (the supervisor is alive
+        # and the source is being polled). The operator can read
+        # ``wake_unix`` on the status headline for the next ask.
+        if not next_decision:
+            poll_grace = 480.0  # 4 * 120s default poll_seconds
+            latest_unix = float(terminal.get("unix") or 0.0)
+            import time as _time
+
+            now = _time.time()
+            if now - latest_unix < poll_grace and op_reports:
+                next_decision = "in_flight"
 
         complete = bool(dispatch and start and terminal and op_reports and next_decision)
         row = CycleRow(
