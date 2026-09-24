@@ -1,18 +1,19 @@
 # research-institution development helpers.
 #
 # Common workflows:
-#   make help                 - show available targets
-#   make lint                 - run ruff check
-#   make format               - apply ruff format
-#   make typecheck            - run pyright strict
-#   make test                 - run unit tests
-#   make check-prime-directive - run the prime-directive grep (CI gate)
-#   make clean                - delete __pycache__, *.pyc, tool caches, build artifacts
+#   make help                       - show available targets
+#   make lint                       - run ruff check
+#   make format                     - apply ruff format
+#   make typecheck                  - run pyright strict
+#   make test                       - run unit tests
+#   make check-prime-directive      - run the prime-directive grep (CI gate)
+#   make collect-prime-directive    - emit snippet file for prime-directive cleanup
+#   make clean                      - delete __pycache__, *.pyc, tool caches, build artifacts
 #
 # Mirrors the Makefile shape in math/ and pi_monitor/ so the institution's
 # four repos share a consistent developer surface.
 
-.PHONY: help lint format typecheck test check-prime-directive clean
+.PHONY: help lint format typecheck test check-prime-directive collect-prime-directive clean
 
 help:
 	@echo "Targets:"
@@ -22,6 +23,7 @@ help:
 	@echo "  typecheck             - pyright strict"
 	@echo "  test                  - pytest"
 	@echo "  check-prime-directive - run prime-directive grep gate"
+	@echo "  collect-prime-directive - emit snippet file /tmp/prime-directive-snippets.txt"
 	@echo "  clean                 - delete __pycache__, *.pyc, tool caches, build artifacts"
 
 lint:
@@ -38,6 +40,10 @@ test:
 
 check-prime-directive:
 	bash scripts/check-prime-directive.sh
+
+collect-prime-directive:
+	@python3 scripts/collect-prime-directive-edits.py /tmp/prime-directive-snippets.txt
+	@echo "edit /tmp/prime-directive-snippets.txt then run: python3 scripts/apply-prime-directive-edits.py /tmp/prime-directive-snippets.txt"
 
 clean:
 	@echo "Cleaning research-institution build artifacts..."
