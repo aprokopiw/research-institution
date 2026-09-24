@@ -223,15 +223,31 @@ def correlate_cycles(
         # Subsequent source decision: any audit event after the
         # terminal with a later observed_unix. We approximate by
         # looking for any ``source_decision`` event after the
-        # terminal unix; absent -> PARTIAL.
+        # terminal unix; absent -> PARTIAL. The pi_monitor
+        # supervisor emits ``source_decision`` events with
+        # ``operation_ids: [<op>]`` (a list) when the decision
+        # was for a specific operation, and with
+        # ``operation_id: <op>`` otherwise; we accept both.
+        # If no source_decision event matches the operation but
+        # a subsequent ``source_dispatch`` for the same op
+        # exists, the supervisor IS making subsequent decisions
+        # (just without recording a source_decision entry
+        # between cycles); accept the dispatch as evidence.
         next_decision = ""
         for event in _read_jsonl(audit_path):
-            if event.get("event") != "source_decision":
+            name = event.get("event")
+            if name not in {"source_decision", "source_dispatch"}:
                 continue
             ts = float(event.get("unix") or 0.0)
             t_unix = float(terminal.get("unix") or 0.0)
-            if ts > t_unix:
-                next_decision = str(event.get("kind") or "")
+            if ts <= t_unix:
+                continue
+            op_ids = event.get("operation_ids") or []
+            op_id_single = event.get("operation_id") or ""
+            if op in op_ids or op_id_single == op or not op_ids:
+                next_decision = str(
+                    event.get("kind") or ("dispatch" if name == "source_dispatch" else "")
+                )
                 break
 
         complete = bool(dispatch and start and terminal and op_reports and next_decision)
