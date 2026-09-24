@@ -65,6 +65,9 @@ SANCTIONED_GLOBS=(
   "*/scripts/coherence/_metrics/d9_prime_directive_clean.py"
   # Math grandfathered drift tuple (class #7 - ADR-0013)
   "*/tests/integration/test_postgres_cutover_gates.py"
+  # The prime-directive bulk-rewrite helper itself (its job is to
+  # name the forbidden tokens as part of the rule definitions)
+  "*/scripts/rewrite-snippets.py"
   # Math decoupling-history archives (historical extraction trace)
   "*/docs/decoupling-history/*"
   # Kaplansky RESUME.md names the active Spec Kit feature
