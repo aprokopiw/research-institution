@@ -94,7 +94,7 @@ identicity) are excluded from this matrix:
 - `research-institution/tests/test_cold_start_hermetic.py`:
   subprocess uses pi_monitor's `.venv/bin/python3` which lacks
   `research_institution` (pip-install missing in the venv). Pre-existed
-  before plan-013.
+  before @ADR-0011.
 - math: `tests/integration/test_frontier_scheduler_live_wiring.py::test_receipt_binds_to_live_commit`
   (stale receipt, HEAD moved).
 - math: `tests/integration/test_pi_monitor_lifecycle.py::test_lifecycle_verify_produces_documented_lines`

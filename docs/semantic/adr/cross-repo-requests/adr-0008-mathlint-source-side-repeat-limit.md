@@ -83,4 +83,4 @@ outcome should refuse to ask a 6th time.
 - `@ADR-0009` — sibling request: pi_monitor supervisor-side repeat circuit.
 - `mathlint/orchestration/real_source.py:114` — the `decide_next`
   function this ADR targets.
-- `research-institution/HARDENING-CHECKLIST.md §C.2` — original ask (deleted; archived in plan-011 closure audit, durable anchor `@INV-0093`).
+- `research-institution/HARDENING-CHECKLIST.md §C.2` — original ask (deleted; archived in @ADR-0007 closure audit, durable anchor `@INV-0093`).

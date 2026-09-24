@@ -220,7 +220,7 @@ operator-supplied repo path.**
   This is the operator's runbook for launching a research
   program; the literal `kaplansky` is correct operator
   vocabulary ("bash launch-program.sh kaplansky").
-- `docs/operations/quickstart-spec-005.md` — 4 refs.
+- `docs/operations/quickstart-@CTR-0005.md` — 4 refs.
   Operator-facing.
 - `docs/operations/smoke001-playbook.md` — 3 refs.
   Operator-facing.

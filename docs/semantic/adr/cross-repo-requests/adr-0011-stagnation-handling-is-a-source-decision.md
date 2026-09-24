@@ -28,7 +28,7 @@ related:
   - docs/semantic/adr/cross-repo-requests/adr-0008-mathlint-source-side-repeat-limit.md
   - docs/semantic/adr/cross-repo-requests/adr-0010-mathlint-decide-next-kind-case.md
   - docs/concepts/cross-repo-decision-boundary.md
-  - docs/operations/plan-013-live-supervisor-authority.md
+  - docs/operations/@ADR-0011-live-supervisor-authority.md
 postmortem:
   - 2026-09-13 — 187-attempt `blocked/stalled` loop on `work.kaplansky.extract-minimal-rigidity-overlap` (see @ADR-0007, @ADR-0008, @ADR-0009 origin-postmortem sections).
   - 2026-09-19 — live supervisor 4-attempt no-delta loop on `K4-characteristic-two-restriction-obstruction` (executions file `~/.local/state/mathlint/pi-monitor/executions/750d7954282c886d2bbda84de04881a33151fb25183febe744d78693891e25bb.json`, outcome digest `aae2f6d576f9655b86bc535d465797c69da760921f71ca85d7926d0d6099b709` ×4).
@@ -38,7 +38,7 @@ postmortem:
 
 ## Status
 
-**Shipped in plan-013 (2026-09-20).** The institution-side
+**Shipped in @ADR-0011 (2026-09-20).** The institution-side
 implementation is in `research-institution/providers/
 research_institution_provider.py::_consult_math_and_translate`
 and is wired through `select_next_work_for_supervisor`. The
@@ -47,7 +47,7 @@ live_source_snapshot.py::consult` (sibling ADR
 `@ADR-0097-live-source-snapshot-consult-adapter`, status
 `proposed`). Wire shape is byte-identical to pre-plan-013;
 pi_monitor is byte-identical pre/post. Closure audit:
-`docs/operations/plan-013-closure-audit.md`.
+`docs/operations/@ADR-0011-closure-audit.md`.
 
 **Original status (2026-09-20, pre-ship):** Drafted in
 research-institution; pending ratification in math-engine.
@@ -287,7 +287,7 @@ and `WorkerRuntime` remain as-is. The boundary is preserved.
 - `@ADR-0014-execution-authority-boundary` (pi_monitor) —
   the loop-not-DAG guardrail.
 - `@ADR-0019-live-campaign-sequencing` (pi_monitor) —
-  the four-step live-campaign build order plan-013
+  the four-step live-campaign build order @ADR-0011
   respects.
 - `@CTR-0001-work-sources-and-runtimes-exchange-revisioned-execution-facts`
   (pi_monitor) — the source-decision vocabulary.
@@ -295,7 +295,7 @@ and `WorkerRuntime` remain as-is. The boundary is preserved.
   — the durable invariant this ADR anchors.
 - `@CTR-0100-live-source-snapshot-contract` — the
   math-side wrapper's typed contract.
-- `docs/operations/plan-013-live-supervisor-authority.md` —
+- `docs/operations/@ADR-0011-live-supervisor-authority.md` —
   the full plan with the 14-gate closure audit.
 - `docs/concepts/cross-repo-decision-boundary.md` — the
   supervisor / judge / source / worker four-way split.

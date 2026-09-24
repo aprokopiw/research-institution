@@ -20,7 +20,7 @@ All public functions are pure: they take an `Environment`-style
 abstraction or a `Path`/`subprocess.run`-style runner, both
 injectable from tests via ``tests/_fakes.py``.
 
-Spec 014 (typed-contract consolidation): ``status_payload`` is
+@CTR-0081 (typed-contract consolidation): ``status_payload`` is
 the typed :class:`pi_monitor.operator.supervisor_status.SupervisorStatusPayload`
 re-exported here as :class:`SupervisorStatusPayload`. The
 dispatcher imports the canonical Pydantic model so a drift in
@@ -147,7 +147,7 @@ def probe_supervisor(
             is_alive=False,
             status_payload=None,
         )
-    # Spec 014: typed-contract consolidation. Parse the raw dict
+    # @CTR-0081: typed-contract consolidation. Parse the raw dict
     # through the canonical Pydantic model so the dispatcher sees
     # a strict shape. ``extra="allow"`` preserves any forward-
     # compatible field pi-monitor may add; a malformed field

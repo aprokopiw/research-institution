@@ -1,4 +1,4 @@
-"""Acceptance tests for plan-013 (no-delta loop fix).
+"""Acceptance tests for @ADR-0011 (no-delta loop fix).
 
 Per `@ADR-0011-stagnation-handling-is-a-source-decision` and
 `@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult`,
@@ -22,7 +22,7 @@ These tests pin:
    ``select_next_work_for_supervisor`` never emits a ``SourceDecision``
    variant outside the existing ``Dispatch | Wait | OperatorRequired |
    Stop`` set; the ``reason_code`` field is one of the canonical
-   values (existing 7 + the 2 new plan-013 additions).
+   values (existing 7 + the 2 new @ADR-0011 additions).
 """
 
 from __future__ import annotations

@@ -108,4 +108,4 @@ supervisor-side circuit is defense-in-depth that catches:
 - `@ADR-0014` — pi_monitor invariant: re-dispatch of the same key is
   `reactivate` (the design choice this circuit augments, not replaces).
 - `pi_monitor/supervisor.py:1394` — the dispatch path this ADR targets.
-- `research-institution/HARDENING-CHECKLIST.md §C.3` — original ask (deleted; archived in plan-011 closure audit, durable anchor `@INV-0093`).
+- `research-institution/HARDENING-CHECKLIST.md §C.3` — original ask (deleted; archived in @ADR-0007 closure audit, durable anchor `@INV-0093`).

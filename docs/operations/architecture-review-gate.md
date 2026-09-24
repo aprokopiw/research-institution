@@ -9,7 +9,7 @@ related:
   - @ADR-0011-stagnation-handling-is-a-source-decision
   - @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult
   - @CTR-0100-live-source-snapshot-contract
-  - docs/operations/plan-013-live-supervisor-authority.md
+  - docs/operations/@ADR-0011-live-supervisor-authority.md
   - docs/concepts/cross-repo-decision-boundary.md
 date: 2026-09-20
 supersedes: pre-plan-013 operator-decision framing (now historical context §5)
@@ -17,7 +17,7 @@ supersedes: pre-plan-013 operator-decision framing (now historical context §5)
 
 # Architecture-review gate — model-decision framing
 
-> **Posture change (2026-09-20, plan-013).** The architecture-
+> **Posture change (2026-09-20, @ADR-0011).** The architecture-
 > review gate is a **model decision** routed through the
 > source, not an **operator decision** that pauses the
 > supervisor. This is the durable record of the new framing;
@@ -176,7 +176,7 @@ is satisfied differently by `@ADR-0011`.
 > Do not follow this section's instructions; the new
 > framing is in §0–§4.
 
-**Before plan-013 (operator-decision framing):**
+**Before @ADR-0011 (operator-decision framing):**
 
 - The dispatcher refused to launch while the gate was
   closed.
@@ -244,14 +244,14 @@ These docs were updated in PR-A:
   the durable invariant anchoring the fix.
 - `@CTR-0100-live-source-snapshot-contract` — the math-side
   consult adapter's typed contract.
-- `docs/operations/plan-013-live-supervisor-authority.md` —
+- `docs/operations/@ADR-0011-live-supervisor-authority.md` —
   the unified plan.
 - `docs/concepts/cross-repo-decision-boundary.md` — the
   supervisor / judge / source / worker four-way split.
 - `docs/concepts/architecture.md` — the kernel / OS /
   driver / program mental model.
 - `research_institution/cli.py::check_gate` — the dispatcher's
-  gate check (unchanged by plan-013; still parses the
+  gate check (unchanged by @ADR-0011; still parses the
   roadmap's `TASK KIND:` line for preflight).
 - `tests/test_gate_check.py` — contract tests for the gate
-  check (unchanged by plan-013).
+  check (unchanged by @ADR-0011).

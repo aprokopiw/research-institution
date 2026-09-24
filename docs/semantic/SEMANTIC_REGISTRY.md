@@ -52,7 +52,7 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 | `@ADR-0008` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` source-side repeat limit |
 | `@ADR-0009` | `research-institution/docs/semantic/adr/cross-repo-requests/` | pi_monitor supervisor-side repeat circuit (**superseded by `@ADR-0011`**) |
 | `@ADR-0010` | `research-institution/docs/semantic/adr/cross-repo-requests/` | mathlint `decide_next` `kind` discriminator must use the canonical lowercase form (closed 2026-09-20) |
-| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision (shipped plan-013) |
+| `@ADR-0011` | `research-institution/docs/semantic/adr/cross-repo-requests/` | stagnation handling is a source decision, not a supervisor decision (shipped @ADR-0011) |
 
 ### Math-engine anchors (most-cited)
 
@@ -60,7 +60,7 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 |--------|----------|------------------|
 | `@ADR-0014` | `math/docs/semantic/adr/` | mathlint does not import program-named modules |
 | `@ADR-0091` | `math/docs/semantic/adr/` | mathlint does not ship program-specific launchers |
-| `@ADR-0097` | `math/docs/semantic/adr/` | live source snapshot — consult adapter exposing the kernel to the live source-decision flow (plan-013 sibling) |
+| `@ADR-0097` | `math/docs/semantic/adr/` | live source snapshot — consult adapter exposing the kernel to the live source-decision flow (@ADR-0011 sibling) |
 | `@INV-0006` | `math/docs/semantic/invariants/` | deterministic registry and typed effects |
 | `@INV-0093` | `math/docs/semantic/invariants/` | (math; superset of institution's INV-0093) |
 

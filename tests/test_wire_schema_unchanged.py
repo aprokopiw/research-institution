@@ -1,6 +1,6 @@
 """Pin the wire schema to byte-identical-to-pre-plan-013.
 
-Per @CTR-0021-wire-protocol-version-pinned, plan-013 ships
+Per @CTR-0021-wire-protocol-version-pinned, @ADR-0011 ships
 without a wire schema bump. This test pins the wire-side
 shape of the four decision variants and the WorkRequest
 envelope so any future regression that introduces a new
@@ -15,7 +15,7 @@ the wire?". They:
 2. Pin pi_monitor's ``RoleName`` Literal to its 8 values,
    none of which is a math-internal ``RoleProfileName``.
 3. Pin the canonical reason-code set to the existing 7 values
-   + the 2 plan-013 OS-side extensions (clearly documented
+   + the 2 @ADR-0011 OS-side extensions (clearly documented
    as the OS-side only extension).
 4. Pin the work-decision return-type union to
    ``Dispatch | Wait | OperatorRequired | Stop`` (no fifth

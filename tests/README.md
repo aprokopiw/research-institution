@@ -23,10 +23,10 @@
 │   │   └── test_source_decision_contract.py, test_source_decision_wire_typed.py
 │   ├── for the typed source-decision envelope (research-institution mirror)
 │   │   └── test_source_decision_wire_typed.py, test_typed_work_envelopes.py
-│   ├── for stagnation handling (plan-013)
-│   │   └── test_source_decision_stagnation.py  ← NEW in plan-013 PR-C
+│   ├── for stagnation handling (@ADR-0011)
+│   │   └── test_source_decision_stagnation.py  ← NEW in @ADR-0011 PR-C
 │   └── for the wire schema being byte-identical to pre-PR-C
-│       └── test_wire_schema_unchanged.py  ← NEW in plan-013 PR-C
+│       └── test_wire_schema_unchanged.py  ← NEW in @ADR-0011 PR-C
 │
 ├── "the green gate" (the canonical wiring evidence)
 │   ├── for the hermetic gate (no LLM calls)
@@ -93,7 +93,7 @@ RESEARCH_INSTITUTION_VWIRE_DIRECT=1 bash scripts/verify-institution.sh
 # The full unit + integration test suite.
 .venv/bin/python -m pytest -q
 
-# Just the source-decision tests (plan-013 PR-C target).
+# Just the source-decision tests (@ADR-0011 PR-C target).
 .venv/bin/python -m pytest -q tests/test_source_decision_stagnation.py \
     tests/test_source_decision_contract.py \
     tests/test_wire_schema_unchanged.py
@@ -113,9 +113,9 @@ When you add a new test, ask:
    for catalog content.
 2. **Is it testing the dispatcher?** Add to `test_cli.py`
    or `test_dispatcher.py`. Don't create a new test file
-   unless the test is genuinely a new surface (e.g. plan-013
+   unless the test is genuinely a new surface (e.g. @ADR-0011
    PR-C adds `test_source_decision_stagnation.py` for
-   plan-013-specific behavior).
+   @ADR-0011-specific behavior).
 3. **Is it testing the wire format?** Add to
    `test_source_decision_contract.py` or one of its
    siblings. Don't fork.
@@ -133,5 +133,5 @@ genuine new surface, not by a casual choice of placement.
 - `docs/README.md` — the 5-minute cold-start navigation index.
 - `docs/operations/verification-gates.md` — the canonical
   validation command catalog.
-- `docs/operations/plan-013-live-supervisor-authority.md` —
+- `docs/operations/@ADR-0011-live-supervisor-authority.md` —
   the unified plan that adds the new test files.

@@ -247,7 +247,7 @@ def test_canonical_reason_codes_is_frozen() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plan-013 OS-side reason-code additions.
+# @ADR-0011 OS-side reason-code additions.
 # ---------------------------------------------------------------------------
 
 

@@ -87,19 +87,19 @@ from pi_monitor.work.work_source import (
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Plan-013 (no-delta loop fix) additions.
+# @ADR-0011 (no-delta loop fix) additions.
 #
 # These two reason codes ride along on the existing ``reason_code: str``
 # field — the wire schema is byte-identical to pre-plan-013. They are
 # not yet inside pi_monitor's ``CanonicalReasonCode`` Literal because
-# plan-013 ships without touching pi_monitor; research-institution
+# @ADR-0011 ships without touching pi_monitor; research-institution
 # emits them and the supervisor's wire codec accepts them as opaque
 # strings. Per @CTR-0001's forward-compat note, codes outside the
 # canonical set are tolerated by the supervisor and flagged by the
 # paired-receipt verifier for the operator. A future math-maintainer
 # review may extend pi_monitor's Literal to include these; the
 # research-institution contracts module is the documented home for
-# plan-013 reason codes regardless.
+# @ADR-0011 reason codes regardless.
 # ---------------------------------------------------------------------------
 
 #: ``Wait`` reason when the kernel's stagnation trigger has fired on
@@ -118,11 +118,11 @@ REASON_ARCHITECTURE_REVIEW_DISPATCH: Final[str] = "architecture_review_dispatch"
 #: Re-export of the closed canonical reason-code set. Kept byte-equal
 #: to pi_monitor's wire-authority set so the cross-repo parity test
 #: in ``tests/test_cross_repo_type_identity.py`` stays green. The
-#: plan-013 OS-side additions live in :data:`OS_EXTENDED_REASON_CODES`
+#: @ADR-0011 OS-side additions live in :data:`OS_EXTENDED_REASON_CODES`
 #: below; both sets together are the documented OS reason-code union.
 CANONICAL_REASON_CODES: frozenset[str] = _PM_CANONICAL_REASON_CODES
 
-#: Plan-013 OS-side reason-code additions. These ride along on the
+#: @ADR-0011 OS-side reason-code additions. These ride along on the
 #: existing ``reason_code: str`` field — the wire schema is byte-
 #: identical to pre-plan-013 because pi_monitor's wire codec accepts
 #: any string. They are documented in this module until a future
@@ -136,7 +136,7 @@ OS_EXTENDED_REASON_CODES: frozenset[str] = frozenset(
 )
 
 #: Combined OS reason-code union (pi_monitor's canonical set plus
-#: the plan-013 OS-side additions). The dispatcher accepts reasons
+#: the @ADR-0011 OS-side additions). The dispatcher accepts reasons
 #: from this combined set; the supervisor's wire codec accepts any
 #: string per ``@CTR-0001`` forward-compat.
 EXTENDED_REASON_CODES: frozenset[str] = (
@@ -149,14 +149,14 @@ EXTENDED_REASON_CODES: frozenset[str] = (
 #: error at any call site that declares ``reason_code: CanonicalReasonCode``.
 CanonicalReasonCode = PM_CanonicalReasonCode
 
-#: Workload-side role alias for plan-013 dispatch paths. The
-#: ``RoleName`` field is pi_monitor's wire vocabulary; plan-013 only
+#: Workload-side role alias for @ADR-0011 dispatch paths. The
+#: ``RoleName`` field is pi_monitor's wire vocabulary; @ADR-0011 only
 #: emits a NARROWING subset (``research`` / ``maintenance`` /
 #: ``primary`` / ``supporting`` / ``default``) so a typo at the OS
 #: composition root is caught at the import boundary. The 5
 #: wire-allowed values are the ones the OS actually injects on the
 #: ``dataclasses.replace(candidate, role=...)`` path. Other wire values
-#: (``intake``, ``review``, ``milestone``) are not used by plan-013;
+#: (``intake``, ``review``, ``milestone``) are not used by @ADR-0011;
 #: reserving them for future plan-* work keeps the Literal closed.
 WorkRequestRoleAlias = Literal[
     "research",
@@ -167,7 +167,7 @@ WorkRequestRoleAlias = Literal[
 ]
 
 # ---------------------------------------------------------------------------
-# Plan-013 OS-side WorkRequest payload keys.
+# @ADR-0011 OS-side WorkRequest payload keys.
 #
 # The OS consults math's live-source snapshot and injects the typed
 # identity fields (``directive_content_hash``, ``directive_template_hash``,
@@ -517,7 +517,7 @@ def parse_work_request_envelopes(
     raw dicts continue to access ``request.payload`` directly.
 
     A future source may add a new field to any envelope; because
-    each envelope has ``extra="allow"`` (per spec 004 wire-compat
+    each envelope has ``extra="allow"`` (per @INV-0007 wire-compat
     discipline), this function never raises on unknown fields.
     """
     return (

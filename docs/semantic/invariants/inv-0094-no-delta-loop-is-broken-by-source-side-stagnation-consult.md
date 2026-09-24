@@ -81,7 +81,7 @@ a stagnation consult is a one-step composition.
   `ActionKind.ARCHITECTURE_REVIEW_REQUIRED` once
   `deltas.stagnation_trigger(root, target).no_delta_count >= 2`.
   The no-delta verdict is **already computed** inside math;
-  plan-013 surfaces it to the OS layer that previously did not
+  @ADR-0011 surfaces it to the OS layer that previously did not
   see it.
 - `compile_mathematical_directive` / `compile_architecture_directive`
   accept `RoleProfile(role_name=MATHEMATICAL_RESEARCHER, ...)`
@@ -224,7 +224,7 @@ attempts 5+   → horizon admission completes (architect
 - `@ADR-0014-execution-authority-boundary` (pi_monitor) —
   the loop-not-DAG guardrail that protects this invariant's
   authority split.
-- `docs/operations/plan-013-live-supervisor-authority.md` —
+- `docs/operations/@ADR-0011-live-supervisor-authority.md` —
   the full plan with the 14-gate closure audit.
 - `docs/concepts/cross-repo-decision-boundary.md` — the
   supervisor / judge / source / worker four-way split.

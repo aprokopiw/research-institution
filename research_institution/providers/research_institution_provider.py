@@ -17,7 +17,7 @@ Responsibilities:
   (never by hardcoded program name).
 - Translate math's verdict (via
   ``mathlint.orchestration.live_source_snapshot.consult_work_source_snapshot``,
-  plan-013 PR-B) into the existing
+  @ADR-0011 PR-B) into the existing
   ``SourceDecision`` vocabulary (Dispatch | Wait |
   OperatorRequired | Stop).
 - Translate math's verdict kinds into the existing wire
@@ -43,14 +43,14 @@ Non-responsibilities:
 
 Contracts:
 - @CTR-0094-work-source-provider-dispatch-envelope
-- @CTR-0100-live-source-snapshot-contract (plan-013)
+- @CTR-0100-live-source-snapshot-contract (@ADR-0011)
 - @ADR-0007-research-institution-owns-work-source-provider
-- @ADR-0011-stagnation-handling-is-a-source-decision (plan-013)
-- @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult (plan-013)
+- @ADR-0011-stagnation-handling-is-a-source-decision (@ADR-0011)
+- @INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult (@ADR-0011)
 - @CTR-0021-wire-protocol-version-pinned
 
 The consult-and-translate step (see :func:`select_next_work_for_supervisor`)
-implements the plan-013 architecture-review flow per @ADR-0011
+implements the @ADR-0011 architecture-review flow per @ADR-0011
 and @INV-0094. Adding a new verdict_kind here is a deliberate
 schema bump; see @CTR-0021-wire-protocol-version-pinned.
 
@@ -315,7 +315,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
          OR has no entry-point-registered work-selection callable,
          the OS emits a Wait with a clear diagnostic naming only
          the *catalog key* (not the program python module).
-      7. **NEW (plan-013):** When the program returns work and
+      7. **NEW (@ADR-0011):** When the program returns work and
          ``repository`` is a mathlint project, the OS consults math's
          stagnation triggers + scheduler verdict via
          ``mathlint.orchestration.live_source_snapshot.consult(math_project, candidate, t)``.
@@ -411,7 +411,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
         )
     label_summary = ", ".join(req.operation_id for req in work)
     # ------------------------------------------------------------------
-    # NEW (plan-013): consult math's view of the world, then translate
+    # NEW (@ADR-0011): consult math's view of the world, then translate
     # the verdict into the existing ``Dispatch`` / ``Wait`` envelope.
     # The consult is read-only; if ``repository`` is not a mathlint
     # project, fall back to the existing dispatch behavior.
@@ -434,7 +434,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
 
 
 # ---------------------------------------------------------------------------
-# Plan-013: consult-and-translate step.
+# @ADR-0011: consult-and-translate step.
 # ---------------------------------------------------------------------------
 
 

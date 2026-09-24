@@ -78,11 +78,11 @@ observations tagged with the previous fingerprint the moment
 the cap changes. The worker resumes as soon as the new cap
 is loaded.
 
-## plan-013 source-decision audit fields (post-merge)
+## @ADR-0011 source-decision audit fields (post-merge)
 
 The OS-level work source (`select_next_work_for_supervisor`)
 emits three new structured fields on the `source_decision`
-audit event after plan-013 lands:
+audit event after @ADR-0011 lands:
 
 - `verdict_kind` — one of `DISPATCH_RESEARCH`,
   `DISPATCH_ARCHITECT`, `ARCHITECTURE_REVIEW_REQUIRED`,

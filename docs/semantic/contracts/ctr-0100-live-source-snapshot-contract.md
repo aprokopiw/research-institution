@@ -165,7 +165,7 @@ def consult(
       1. (math) a new ``ActionKind`` value plus the wrapper's translation table update;
       2. (research-institution) the matching `SourceDecision` translation;
       3. (pi_monitor) only if a NEW ``SourceDecision`` variant is needed
-         (e.g. if a `Stop` needs a sub-shape) — never required under plan-013.
+         (e.g. if a `Stop` needs a sub-shape) — never required under @ADR-0011.
 4. **Byte-stable directive hash.** Two compilations of the same
    ``role_profile + request + ReadOnlyMathIRQuery`` yield identical
    ``compute_directive_content_hash(...)`` values. The wrapper stores the
@@ -222,7 +222,7 @@ def consult(
   3. A pi_monitor-side bump to
      ``pi_monitor.work.work_source.DecisionKind`` is **only**
      required if the new verdict translates to a NEW
-     ``SourceDecision`` variant. Under plan-013, all four verdicts
+     ``SourceDecision`` variant. Under @ADR-0011, all four verdicts
      translate to existing ``Dispatch | Wait`` variants (no pi_monitor
      bump needed).
 - Removing or renaming a ``verdict_kind`` literal is a breaking
@@ -280,5 +280,5 @@ def consult(
   (pi_monitor) — the freshness window.
 - `@CTR-0021-wire-protocol-version-pinned` — the version
   discipline for any future verdict kind.
-- `docs/operations/plan-013-live-supervisor-authority.md` —
+- `docs/operations/@ADR-0011-live-supervisor-authority.md` —
   the full plan with the 14-gate closure audit.

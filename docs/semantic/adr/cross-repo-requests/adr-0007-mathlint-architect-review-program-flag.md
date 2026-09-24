@@ -96,4 +96,4 @@ work source). The clean fix is a first-class programmatic verdict.
 - `@ADR-0006` — research-institution owns only catalog + bootstrap + green gate + dispatcher.
 - `@INV-0091` — mathlint does not ship program launchers.
 - `@INV-0093` — institution green gate is the canonical wiring evidence.
-- `research-institution/HARDENING-CHECKLIST.md §C.1` — original ask (deleted; archived in plan-011 closure audit, durable anchor `@INV-0093`).
+- `research-institution/HARDENING-CHECKLIST.md §C.1` — original ask (deleted; archived in @ADR-0007 closure audit, durable anchor `@INV-0093`).
