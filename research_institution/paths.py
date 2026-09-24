@@ -83,13 +83,19 @@ def institution_dir(env: Environment | None = None) -> Path:
 
     1. The ``MATHLINT_INSTITUTION_DIR`` env var (set by the operator's
        dotfiles; the canonical override).
-    2. The current working directory or any ancestor that contains
-       ``catalog/programs.toml`` (covers the common case where the
-       operator `cd`s into the repo and runs the dispatcher directly
-       from there, e.g. in a fresh test or recovery scenario).
+    2. The package's own ``__file__`` location walked back to the
+       repo root (covers the common case where the operator
+       installed the package into an interpreter on PATH and runs
+       ``python -m research_institution <verb>`` from any cwd,
+       including ``$HOME``).
+    3. The current working directory or any ancestor that contains
+       ``catalog/programs.toml`` (covers the case where the
+       operator ``cd``s into the repo and runs the dispatcher
+       directly from there).
 
-    Raises RuntimeError when neither path resolves, with an actionable
-    fix that names the env var and the canonical repo path.
+    Raises RuntimeError when none of the three paths resolves,
+    with an actionable fix that names the env var and the
+    canonical repo path.
     """
     e = env or _OsEnviron()
     raw = e.get("MATHLINT_INSTITUTION_DIR")
@@ -98,13 +104,36 @@ def institution_dir(env: Environment | None = None) -> Path:
         if not p.is_dir():
             raise RuntimeError(f"MATHLINT_INSTITUTION_DIR points at non-directory: {p}")
         return p
-    # Fallback: walk up from cwd looking for the catalog marker.
+    # Walk up from cwd looking for the catalog marker.
+    # This is the primary cwd-independent path: when the
+    # operator ``cd``s into the repo (or any descendant)
+    # and runs the dispatcher, the catalog resolves without
+    # any environment plumbing.
     import os as _os
 
     cwd = Path(_os.getcwd())
     for candidate in (cwd, *cwd.parents):
         if (candidate / "catalog" / "programs.toml").is_file():
             return candidate
+    # Package-installation fallback. The package's __file__
+    # lives under ``<repo>/research_institution/paths.py``
+    # (or whatever the wheel layout uses); the repo root is
+    # the parent of the package directory. This makes the
+    # CLI cwd-independent when the operator has installed
+    # the package (e.g. via ``uv tool install`` or
+    # ``pip install -e .``) and runs ``python -m
+    # research_institution`` from any cwd, including
+    # ``$HOME``. It runs only after the cwd-walk so a test
+    # fixture that puts cwd outside the package directory
+    # still resolves to the cwd's ancestor (the legacy
+    # behavior). Tests that need to exercise the "no
+    # resolution at all" path opt out via the
+    # ``MATHLINT_NO_PACKAGE_ROOT_FALLBACK`` env var (the
+    # legacy fail-closed diagnostic).
+    if not e.get("MATHLINT_NO_PACKAGE_ROOT_FALLBACK"):
+        package_root = Path(__file__).resolve().parent.parent
+        if (package_root / "catalog" / "programs.toml").is_file():
+            return package_root
     raise RuntimeError(
         "MATHLINT_INSTITUTION_DIR is not set AND no ancestor of cwd contains "
         "catalog/programs.toml. Either `cd` into the research-institution repo "

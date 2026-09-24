@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+
+  Canonical LaunchAgent template for the Kaplansky program.
+
+  Distinct Label from pi-monitor's self-supervision
+  (com.local.pi-monitor.pi-monitor) so two supervisors never
+  collide on a single target (INV-005 one supervisor per target).
+
+  All paths are absolute; no shell substitution at load time
+  (launchd does not perform $HOME expansion). The env_file path
+  is operator-configurable and must be 0600; the installer
+  refuses a wider mode.
+
+  KeepAlive/SuccessfulExit=false is the documented intentional-
+  exit semantics from @ADR-0011-unattended-launchd-service so
+  a clean STOP leaves the service stopped (the operator can
+  restart with `research start kaplansky`); only abnormal
+  exits restart.
+
+  RunAtLoad=true so the operator's login session picks the
+  service up at boot per @ADR-0011.
+
+  Credentials NEVER appear in the plist. The env_file
+  contains only the keys the supervisor's [source.env] block
+  expects; the agent never sees secrets.
+
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>MATHLINT_PI_MONITOR_CONFIG</key>
+		<string>__PI_MONITOR_CONFIG_PATH__</string>
+		<key>MATHLINT_INSTITUTION_DIR</key>
+		<string>__INSTITUTION_DIR__</string>
+		<key>MATHLINT_AUTONOMY_SKIP_G7</key>
+		<string>0</string>
+	</dict>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>Label</key>
+	<string>__LABEL__</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__PI_MONITOR_BIN__</string>
+		<string>run</string>
+		<string>--config</string>
+		<string>__PI_MONITOR_CONFIG_PATH__</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>__STDERR_PATH__</string>
+	<key>StandardOutPath</key>
+	<string>__STDOUT_PATH__</string>
+	<key>WorkingDirectory</key>
+		<string>__INSTITUTION_DIR__</string>
+</dict>
+</plist>

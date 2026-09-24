@@ -42,6 +42,7 @@ from research_institution.paths import (
     institution_dir,
     missing_credentials,
     pi_monitor_config_path,
+    pi_monitor_repo,
     pi_monitor_start_script,
     pi_monitor_state_dir,
 )
@@ -100,6 +101,18 @@ def _which_or_die(binary: str) -> str:
 
 _TASK_KIND_RE = re.compile(r"^TASK KIND:\s*(\S+)\s*$", re.MULTILINE)
 _REASON_LINE_RE = re.compile(r"^REASON:\s*(.+?)$", re.MULTILINE)
+
+
+#: Canonical LaunchAgent label per program. Distinct from
+#: pi-monitor's self-supervision label so two supervisors never
+#: collide on a single target (INV-005 one supervisor per
+#: target). The label is rendered into the plist at install
+#: time so a future program only has to declare its label
+#: here (and the OS never hardcodes program-specific
+#: identity in source).
+_PROGRAM_LAUNCHD_LABEL: dict[str, str] = {
+    "kaplansky": "com.local.research-institution.kaplansky",
+}
 
 # Sentinel used when roadmap produced no TASK KIND line at all.
 # Not a member of TaskKind so consumers can distinguish "explicit
@@ -696,6 +709,111 @@ def watch(
         ]
     )
     raise typer.Exit(code=rc)
+
+
+@app.command("install")
+def install(
+    program: str = typer.Argument(..., help="Program name from the catalog."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Render + show the plist; skip writing / loading."
+    ),
+) -> None:
+    """Install the canonical LaunchAgent for one program.
+
+    Renders the per-program plist template under
+    ``launchd-templates/`` into
+    ``~/Library/LaunchAgents/<label>.plist`` and loads it
+    via ``launchctl bootstrap gui/$UID``. Idempotent:
+    re-running with the same rendered contents is a no-op;
+    a different plist under the same label is refused so
+    the operator can never silently overwrite another
+    supervisor's launchd entry.
+
+    The label is program-owned (``_PROGRAM_LAUNCHD_LABEL``)
+    and distinct from pi-monitor's self-supervision label so
+    two supervisors never collide on a single target
+    (INV-005 one supervisor per target). Use
+    ``research uninstall <program>`` to remove.
+    """
+    from research_institution.launchd import install_plist, render_plist
+    from research_institution.launchd import LaunchAgentTarget
+
+    prog = _require_program(program)
+    label = _PROGRAM_LAUNCHD_LABEL.get(prog.name)
+    if label is None:
+        typer.echo(
+            f"FATAL: no LaunchAgent label configured for {prog.name!r}; "
+            f"add one to _PROGRAM_LAUNCHD_LABEL in cli.py.",
+            err=True,
+        )
+        raise typer.Exit(code=5)
+
+    template_path = (
+        Path(institution_dir()) / "launchd-templates" / f"{prog.name}-pi-monitor.plist.xml"
+    )
+    if not template_path.is_file():
+        typer.echo(f"FATAL: plist template missing: {template_path}", err=True)
+        raise typer.Exit(code=6)
+    template = template_path.read_text(encoding="utf-8")
+
+    pi_monitor_bin = (
+        Path(pi_monitor_repo()) / ".venv" / "bin" / "pi-monitor"
+    )
+    if not pi_monitor_bin.is_file():
+        typer.echo(f"FATAL: pi-monitor binary missing: {pi_monitor_bin}", err=True)
+        raise typer.Exit(code=7)
+
+    cfg_path = pi_monitor_config_path()
+    if not cfg_path.is_file():
+        typer.echo(f"FATAL: pi-monitor config missing: {cfg_path}", err=True)
+        raise typer.Exit(code=8)
+
+    inst_dir = Path(institution_dir())
+    logs_dir = inst_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    target = LaunchAgentTarget(
+        label=label,
+        pi_monitor_bin=pi_monitor_bin,
+        pi_monitor_config_path=cfg_path,
+        institution_dir=inst_dir,
+        stdout_path=logs_dir / f"{prog.name}.out.log",
+        stderr_path=logs_dir / f"{prog.name}.err.log",
+    )
+    rendered = render_plist(template, target)
+    typer.echo(f"rendered plist: {rendered.path}")
+    typer.echo(f"  label: {rendered.label}")
+    typer.echo(f"  config fingerprint: {rendered.config_fingerprint}")
+    ok, msg = install_plist(rendered, dry_run=dry_run)
+    typer.echo(msg)
+    raise typer.Exit(code=0 if ok else 9)
+
+
+@app.command("uninstall")
+def uninstall(
+    program: str = typer.Argument(..., help="Program name from the catalog."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Bootout + remove; skip the live launchctl call."
+    ),
+) -> None:
+    """Remove the LaunchAgent for one program (inverse of ``install``).
+
+    Idempotent: a missing plist is a no-op. Boots out via
+    ``launchctl bootout`` (tolerating "not loaded" = rc 36)
+    and removes the plist from ``~/Library/LaunchAgents/``.
+    """
+    from research_institution.launchd import uninstall_plist
+
+    _require_program(program)
+    label = _PROGRAM_LAUNCHD_LABEL.get(program)
+    if label is None:
+        typer.echo(
+            f"FATAL: no LaunchAgent label configured for {program!r}.",
+            err=True,
+        )
+        raise typer.Exit(code=5)
+    ok, msg = uninstall_plist(label, dry_run=dry_run)
+    typer.echo(msg)
+    raise typer.Exit(code=0 if ok else 9)
 
 
 @app.command("install-skills")

@@ -92,15 +92,53 @@ def test_institution_dir_falls_back_to_catalog_marker(tmp_path: Path, monkeypatc
     assert institution_dir(env) == repo_root
 
 
-def test_institution_dir_raises_when_no_env_and_no_marker(tmp_path: Path, monkeypatch) -> None:
-    """Empty env + cwd has no catalog marker -> actionable RuntimeError."""
+def test_institution_dir_raises_when_no_env_no_marker_no_package_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Empty env + cwd has no catalog marker + package-root fallback disabled
+    -> actionable RuntimeError.
+
+    The package-root fallback (production install) resolves the
+    repo from ``__file__`` when the cwd-walk fails. Tests can
+    disable that fallback by setting
+    ``MATHLINT_NO_PACKAGE_ROOT_FALLBACK=1`` so the legacy
+    "fail closed" path is exercised.
+    """
     isolated = tmp_path / "isolated"
     isolated.mkdir()
     monkeypatch.delenv("MATHLINT_INSTITUTION_DIR", raising=False)
+    monkeypatch.setenv("MATHLINT_NO_PACKAGE_ROOT_FALLBACK", "1")
     monkeypatch.chdir(isolated)
-    env = FakeEnvironment(values={})
+    env = FakeEnvironment(
+        values={"MATHLINT_NO_PACKAGE_ROOT_FALLBACK": "1"}
+    )
     with pytest.raises(RuntimeError, match="MATHLINT_INSTITUTION_DIR"):
         institution_dir(env)
+
+
+def test_institution_dir_falls_back_to_package_root(tmp_path: Path, monkeypatch) -> None:
+    """When cwd-walk fails, the package's own ``__file__`` resolves
+    the repo root so a canonical install makes the CLI
+    cwd-independent (works from ``$HOME``).
+
+    This is the production install path: the operator has
+    ``pip install -e .`` the package; running ``python -m
+    research_institution`` from any cwd resolves the catalog
+    from the package's own location.
+    """
+    isolated = tmp_path / "isolated"
+    isolated.mkdir()
+    monkeypatch.delenv("MATHLINT_INSTITUTION_DIR", raising=False)
+    monkeypatch.delenv("MATHLINT_NO_PACKAGE_ROOT_FALLBACK", raising=False)
+    monkeypatch.chdir(isolated)
+    env = FakeEnvironment(values={})
+    # The package's __file__ lives under
+    # research-institution/research_institution/paths.py; the
+    # repo root is its parent. That directory has the catalog
+    # marker in the real install.
+    resolved = institution_dir(env)
+    assert resolved.is_dir()
+    assert (resolved / "catalog" / "programs.toml").is_file()
 
 
 # ---------------------------------------------------------------------------
