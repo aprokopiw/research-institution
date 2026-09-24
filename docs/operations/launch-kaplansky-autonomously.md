@@ -54,11 +54,22 @@ Plus-plan ballpark derivation: 4M tokens / 5h sustained = ~13K
 tokens/min sustained. A 1m cap at 500K leaves 38× headroom for
 spiky think steps; 24h at 4M = ~16% of the weekly budget.
 
-When any window trips, the supervisor emits
-`rate_limit_denied` followed by `operator_required` audit
-events and stops the run. The worker's next dispatch is
-denied with the trip list surfaced in the audit so the
-operator knows which cap fired.
+When any window trips, the supervisor dispatches on the
+operator-declared ``on_exceeded`` action. The Kaplansky
+autonomous profile sets ``on_exceeded = "wait_until_eligible"``,
+so a trip produces ``rate_limit_denied`` + ``rate_limit_deferred``
+events with the computed ``next_eligible_unix`` and the
+supervisor re-asks the source at eligibility time. No
+``operator_required`` event is emitted, ``stopped`` stays
+``False``, and the deadline persists on
+``state.next_eligible_unix`` so a restart resumes the
+same defer.
+
+Operators who prefer the historical posture can switch to
+``on_exceeded = "operator_required"`` in the operator
+config (``~/.config/mathlint/local-pi-monitor.toml``).
+Under that action the trip emits ``rate_limit_denied`` +
+``operator_required`` audit events and stops the run.
 
 Observability surface (read these to confirm the cap fired
 correctly):
