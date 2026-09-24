@@ -16,6 +16,13 @@ mathlint_pin = ""                      # required, git tag/commit/branch mathlin
 live_credentials_required = true       # required bool
 live_credential_env_vars = []          # required list of env var names; empty list OK
 check_program_script = ""              # required, path relative to program repo root
+# Optional: path (relative to research-institution repo root) to a
+# canonical supervisor-config template. The bootstrap command reads
+# this file, renders it into ``~/.config/mathlint/local-pi-monitor.toml``,
+# and stores the rendered fingerprint with the service so an agent
+# can prove which caps / action are active. Empty / absent = no
+# canonical template; the operator owns the config (the legacy shape).
+supervisor_config_template = ""       # optional, relative path to .toml
 
 # Cross-entries invariants (enforced by tests/test_catalog_consistent.py,
 # not by toml):

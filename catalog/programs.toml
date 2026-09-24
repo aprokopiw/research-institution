@@ -17,6 +17,12 @@ live_credentials_required = true
 # reads OPENAI_API_KEY. See docs/semantic/adr/adr-0001-*.md.
 live_credential_env_vars = ["MATHLINT_MODEL_ROUTE"]
 check_program_script = "scripts/check-program-institution.sh"
+# Canonical supervisor-config template for this program. Loaded by
+# ``research bootstrap`` / ``research start`` so the durable shape of
+# the autonomous profile (rolling caps, typed ``on_exceeded``,
+# no cumulative lifetime halt) is version-controlled here rather
+# than hand-rolled in the operator's home directory.
+supervisor_config_template = "config-templates/kaplansky-pi-monitor.toml"
 # Marker files that identify a directory as belonging to this
 # program. The OS layer (research-institution) uses these as a
 # secondary resolution key: when ``local_path`` does NOT match

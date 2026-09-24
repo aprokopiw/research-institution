@@ -74,6 +74,13 @@ class ProgramTomlEntry(BaseModel):
     # marker exists under the repo root. Optional; defaults to
     # an empty list (defer entirely to ``local_path`` match).
     program_markers: list[str] = []
+    # Optional canonical supervisor-config template (relative
+    # path to a .toml under the research-institution repo).
+    # The bootstrap / start command reads this template,
+    # renders it into the operator's pi-monitor config path,
+    # and stores the rendered fingerprint with the service.
+    # Empty / absent = operator owns the config (legacy shape).
+    supervisor_config_template: str = ""
 
     @field_validator("name")
     @classmethod

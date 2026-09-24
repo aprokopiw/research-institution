@@ -74,6 +74,14 @@ class Program:
     # the single source of truth for these markers; the OS does
     # NOT hardcode program-specific filenames in source.
     program_markers: tuple[str, ...] = ()
+    # Optional canonical supervisor-config template (relative
+    # path under research-institution repo). The bootstrap
+    # command reads this template and renders it into the
+    # operator's pi-monitor config path; the rendered
+    # fingerprint is stored with the service so an agent
+    # can prove which caps / action are active. Empty =
+    # operator owns the config (legacy shape).
+    supervisor_config_template: str = ""
 
     @property
     def resolved_local_path(self) -> Path:
@@ -226,6 +234,7 @@ def _parse_one(entry: dict[str, object], idx: int) -> Program:
         live_credential_env_vars=tuple(typed.live_credential_env_vars),
         check_program_script=typed.check_program_script,
         program_markers=tuple(typed.program_markers),
+        supervisor_config_template=str(getattr(typed, "supervisor_config_template", "") or ""),
     )
 
 
@@ -268,4 +277,5 @@ def _parse_one_legacy(entry: dict[str, object]) -> Program:
         program_markers=tuple(
             str(m) for m in entry.get("program_markers", []) if isinstance(m, str)
         ),
+        supervisor_config_template=str(entry.get("supervisor_config_template", "") or ""),
     )

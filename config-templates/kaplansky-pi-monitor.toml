@@ -1,0 +1,135 @@
+# Canonical supervisor config template for the Kaplansky program.
+#
+# Loaded by ``research-institution`` into
+# ``~/.config/mathlint/local-pi-monitor.toml`` via the
+# ``research bootstrap`` (or ``research start kaplansky``)
+# command. Operator-editable but anchored here so the durable
+# shape of the autonomous profile is version-controlled.
+#
+# Per the autonomous-research brief, the autonomous profile:
+#
+# * keeps bounded attempt + rolling rates (so a runaway is
+#   caught and a one-day burn is bounded)
+# * removes the cumulative lifetime ``max_hours`` /
+#   ``max_attempts`` / ``max_dollars`` counters that would
+#   inevitably require an operator to clear (the autonomous
+#   posture cannot be "indefinite" if a finite counter
+#   guarantees eventual permanent halt)
+# * sets ``on_exceeded = "wait_until_eligible"`` so rolling
+#   exhaustion is self-recovering (the supervisor waits
+#   through the cap and re-asks the source automatically)
+#
+# Field naming matches ``pi_monitor.config.config`` exactly;
+# the supervisor's loader is the wire authority.
+
+[project]
+name = "mathlint-local-readiness"
+root = "/Users/erinprokopiw/Documents/andrei/kaplansky"
+roadmap = "goals"
+task_globs = ["docs/ROADMAP.md"]
+
+# Model routing rule (operator one-pager: docs/operations/launch-kaplansky-autonomously.md):
+#   worker          -> openai-codex/gpt-5.6-sol   (math research / proof / validation / architecture)
+#   judge           -> minimax/minimax-m3          (ops/monitoring sensor)
+#   interactive chat -> global default minimax-M3  (orchestration, repo maintenance)
+[worker]
+command = "/opt/homebrew/bin/pi"
+model = "openai-codex/gpt-5.6-sol"
+thinking = "medium"
+approve_project_files = false
+
+# Math-first initial prompt. (See operator one-pager for full prompt text; abbreviated here.)
+# Math reasoning lives under mathematics/ and docs/; the router refuses
+# edits to src/, tests/, launcher/, and tooling files.
+initial_prompt = "You are the kaplansky math-research worker. Read programs/kaplansky-roadmap.toml for active items; for each, follow @ADR-NNNN / @INV-NNNN / @CTR-NNNN references. Produce math artifacts under mathematics/. Never edit src/, tests/, programs/, docs/semantic/, launcher/, scripts/, pyproject.toml, or uv.lock."
+
+[judge]
+command = "/opt/homebrew/bin/pi"
+model = "minimax/minimax-m3"
+thinking = "medium"
+periodic_healthy_judging = false
+
+# @ADR-0003 — slow iteration, observe-first, fail-closed on every limit.
+[efficiency]
+enabled = true
+shadow_mode = false
+stats_poll_seconds = 120
+min_seconds_between_boundary_steers = 1800
+min_turns_between_manual_compactions = 8
+
+# @ADR-0003 — recovery actions are slow, deliberate, and capped.
+[recovery]
+cooldown_seconds = 900
+max_nudges_per_hour = 1
+max_aborts_per_hour = 1
+max_same_session_restarts_per_hour = 1
+max_fresh_restarts_per_6h = 1
+max_total_interventions_per_6h = 3
+stop_if_same_fingerprint_repeats = 2
+soft_circuit_hold_seconds = 3600
+soft_circuit_max_trips_before_stop = 2
+
+# @ADR-0003 — health probes are infrequent; never auto-restart mid-work.
+[health]
+poll_seconds = 120
+rpc_timeout_seconds = 30
+process_restart_backoff_seconds = 60
+long_running_stall_seconds = 1800
+wedge_seconds = 3600
+
+[state]
+dir = "/Users/erinprokopiw/.local/state/mathlint/pi-monitor"
+
+[secrets.scan_for_env_keys]
+keys = ["API_KEY", "MINIMAX", "OPENROUTER", "ANTHROPIC", "sk-"]
+
+# Per-attempt + rolling burn-rate caps.
+#
+# The autonomous profile keeps:
+#   - bounded attempt duration (recovery cooldown_seconds)
+#   - rolling token / dollar caps (1m / 10m / 1h / 24h)
+#
+# and removes the cumulative lifetime counters (max_hours /
+# max_attempts / max_dollars). The historical config's
+# ``max_hours = 12``, ``max_attempts = 30``, ``max_dollars = 50``
+# inevitably required an operator to clear after a multi-day
+# run; the autonomous posture cannot ship with a finite
+# lifetime counter. Provider-auth failures remain fail-closed
+# (the operator preflight refuses to launch with missing or
+# expired credentials).
+#
+# Rolling caps sized for the operator's documented historical
+# envelope (~12.7M tokens across ~9 attempts; one overnight
+# run = ~12% of the weekly budget). Short-window runaway
+# caps sit comfortably above legitimate p99 with explicit
+# margin; the 24h cap is the operator-facing operating envelope.
+#
+# Action: ``wait_until_eligible`` so the supervisor waits
+# through rolling exhaustion and re-asks the source at the
+# computed eligibility time (the deadline persists across
+# supervisor restarts). ``operator_required`` remains the
+# canonical posture for cumulative exhaustion the operator
+# wants to escalate (none in the autonomous profile).
+[rate_limits]
+max_tokens_per_1m  = 1_000_000      # ~20 deep 5.6-sol turns; 4x p99 with margin
+max_tokens_per_10m = 6_000_000      # short-session ceiling
+max_tokens_per_1h  = 20_000_000     # sustained ceiling above historical 12.7M envelope
+max_tokens_per_24h = 50_000_000     # weekly operating envelope
+max_dollars_per_1m  = 2.00           # spike ceiling
+max_dollars_per_10m = 12.00         # short-session ceiling
+max_dollars_per_1h  = 20.00         # sustained ceiling
+max_dollars_per_24h = 80.00         # weekly operating envelope
+on_exceeded = "wait_until_eligible"
+
+[source]
+kind = "external"
+command = "/Users/erinprokopiw/Documents/andrei/math/.local/share/wrap-mathlint-source.sh"
+cwd = "/Users/erinprokopiw/Documents/andrei/math"
+timeout_seconds = 30
+required_capabilities = ["dispatch", "operator_required", "report_result", "revisioned", "stop", "wait"]
+[source.env]
+KAPLANSKY_REPOSITORY = "/Users/erinprokopiw/Documents/andrei/kaplansky"
+MATHLINT_SOURCE_EXECUTABLE = "/Users/erinprokopiw/Documents/andrei/math/.venv/bin/mathlint-source"
+MATHLINT_SOURCE_PROVIDER = "mathlint.orchestration.real_source:configured_provider"
+MATHLINT_SOURCE_REPORT_HANDLER = "mathlint.orchestration.real_source:configured_report"
+MATHLINT_REPORT_LOG = "/Users/erinprokopiw/.local/state/mathlint/pi-monitor/source-reports.jsonl"
