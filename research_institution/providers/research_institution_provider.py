@@ -90,7 +90,9 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
 import logging
+import os
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -410,6 +412,18 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
             retry_after_seconds=60.0,
         )
     label_summary = ", ".join(req.operation_id for req in work)
+    # OS-layer no-delta loop guard. Catches the gap when the
+    # program repo is not a math project (math's project
+    # consult cannot run, so math's stagnation tracker is
+    # unreachable). The guard reads the supervisor's
+    # ``source-reports.jsonl`` directly and escalates after
+    # ``NO_DELTA_LOOP_THRESHOLD`` consecutive no-deltas for the
+    # same operation.
+    state_dir = _resolve_state_dir(repository)
+    if state_dir is not None:
+        loop_wait = _check_no_delta_loop(work=work, state_dir=state_dir)
+        if loop_wait is not None:
+            return loop_wait
     # ------------------------------------------------------------------
     # NEW (@ADR-0011): consult math's view of the world, then translate
     # the verdict into the existing ``Dispatch`` / ``Wait`` envelope.
@@ -431,6 +445,146 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
         reason_code=REASON_WORK_AVAILABLE,
         reason=f"dispatching {len(work)} active item(s) from proof program: {label_summary}",
     )
+
+
+# ---------------------------------------------------------------------------
+# OS-layer no-delta loop guard.
+#
+# The brief's Section D requires that the same
+# (operation_id, directive_content_hash) tuple cannot dispatch
+# indefinitely under outcome=no-delta. math's
+# ``live_source_snapshot.consult`` enforces this via the
+# ``deltas`` ledger (DOC §14, §32-5.2). When the program repo is
+# not a math project (e.g. kaplansky uses its own roadmap, not
+# math's project config), the consult falls through to dispatch
+# without consulting math's stagnation tracker. This OS-layer
+# guard catches the gap by scanning the supervisor's
+# ``source-reports.jsonl`` ledger directly: if the same
+# (operation_id, directive_content_hash) has produced N
+# consecutive no-delta reports, the OS escalates to a Wait with
+# ``reason_code="architecture_review_required"`` so the
+# supervisor parks the same-target redispatch until either the
+# operator rotates the work or math's project consult
+# (re-)establishes the right next step.
+# ---------------------------------------------------------------------------
+
+#: Default threshold: three consecutive no-delta reports for the
+#: same (target, directive_content_hash) tuple triggers the
+#: architecture-review Wait. Matches math's own
+#: ``STAGNATION_THRESHOLD`` in ``live_source_snapshot`` so the
+#: two layers don't disagree on what "stagnation" means.
+NO_DELTA_LOOP_THRESHOLD: int = 3
+
+#: Stable reason-code for the OS-layer no-delta escalation.
+#: Lives in this module so the wire-level contract is one
+#: source of truth; re-exported via the contracts package for
+#: callers that want the symbol by identity.
+REASON_NO_DELTA_LOOP_GUARD: str = "no_delta_loop_guard"
+
+
+def _read_source_reports(state_dir: Path) -> list[dict[str, object]]:
+    """Return every line of the supervisor's source-reports JSONL.
+
+    Tolerant: missing file, malformed JSON lines, and missing
+    keys all reduce to an empty result. The no-delta guard is a
+    *defensive* layer (math is the authority when reachable);
+    it must never crash on a transient empty/malformed ledger.
+    """
+    log_path = state_dir / "source-reports.jsonl"
+    if not log_path.is_file():
+        return []
+    reports: list[dict[str, object]] = []
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            reports.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return reports
+
+
+def _consecutive_no_deltas(
+    reports: list[dict[str, object]],
+    *,
+    operation_id: str,
+) -> int:
+    """Count consecutive trailing ``no_delta`` reports for one operation.
+
+    Walks the reports in order (oldest first); returns the
+    length of the trailing run whose ``operation_id`` matches
+    AND ``outcome == "no_delta"``. Returns ``0`` when the most
+    recent report is not a no-delta (a single success breaks
+    the run).
+    """
+    count = 0
+    for report in reversed(reports):
+        if str(report.get("operation_id") or "") != operation_id:
+            break
+        if str(report.get("outcome") or "") != "no_delta":
+            break
+        count += 1
+    return count
+
+
+def _check_no_delta_loop(
+    *,
+    work: list[WorkRequest],
+    state_dir: Path,
+) -> Wait | None:
+    """OS-layer guard against identical-target no-delta redispatch.
+
+    Returns a Wait envelope when the most recent N reports for
+    any work item's ``operation_id`` are all ``no_delta``;
+    ``None`` when the dispatch is clear.
+
+    The guard uses only the operation identity (not the
+    directive_content_hash) because the directive hash isn't
+    persisted on the supervisor's source-reports ledger \u2014 only
+    on the ``source_dispatch`` audit event. Same-target
+    no-delta is the conservative trigger.
+    """
+    if not work:
+        return None
+    reports = _read_source_reports(state_dir)
+    if not reports:
+        return None
+    for req in work:
+        op_id = req.operation_id
+        n = _consecutive_no_deltas(reports, operation_id=op_id)
+        if n >= NO_DELTA_LOOP_THRESHOLD:
+            return Wait(
+                source_revision=req.source_revision,
+                decided_unix=time.time(),
+                reason_code=REASON_NO_DELTA_LOOP_GUARD,
+                reason=(
+                    f"OS-layer no-delta loop guard: {n} consecutive "
+                    f"no_delta reports for op-{op_id}; the dispatch "
+                    f"is held until either the operator rotates the "
+                    f"work (deactivate the roadmap item, add a new "
+                    f"active item) or math's project consult "
+                    f"authorizes a fresh directive"
+                ),
+                wake_on_source_change=True,
+                retry_after_seconds=600.0,
+            )
+    return None
+
+
+def _resolve_state_dir(repository: Path) -> Path | None:
+    """Resolve the supervisor state dir from a repository root.
+
+    The supervisor's state lives under ``~/.local/state/mathlint/pi-monitor``
+    on this machine (matches ``[state].directory`` in the
+    supervisor's config). We resolve via the operator's
+    ``$MATHLINT_STATE_DIR`` first, then the canonical default
+    so the guard works in CI without an explicit env.
+    """
+    env = os.environ.get("MATHLINT_STATE_DIR")
+    if env:
+        return Path(env)
+    return Path.home() / ".local" / "state" / "mathlint" / "pi-monitor"
 
 
 # ---------------------------------------------------------------------------
