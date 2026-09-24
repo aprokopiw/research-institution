@@ -19,7 +19,7 @@ OUTPUT FORMAT (text, designed for editing in any editor):
 
   >>> BEGIN SNIPPET repo=research-institution path=research_institution/cli.py line=42
   41 | # previous line for context
-  42 | # plan-013 OS-side extension (rewritten line goes here)
+  42 | # @ADR-0011 OS-side extension (rewritten line goes here)
   43 | # next line for context
   <<< END SNIPPET (match fingerprint: <sha256-hex-of-line-42>)
 
@@ -60,19 +60,30 @@ SANCTIONED_GLOBS = [
     "-live-supervisor-authority.md",
     # Math spec-kit source-of-truth (AGENTS.md class #15)
     "/artifacts/temp/specs/",
+    "artifacts/temp/specs/",
     "/specs/002-canonical-research-state/",
-    # Math plan-009 durable records + Phase U verification (class #16/17)
-    "/docs/operations/plan-009-durable-records",
-    "/docs/operations/plan-009-phase-u-stop-the-line",
+    "/specs/003-operator-status-surface/",
+    "specs/002-canonical-research-state/",
+    "specs/003-operator-status-surface/",
+    # Math @ADR-0088 durable records + Phase U verification (class #16/17)
+    "/docs/operations/@ADR-0088-durable-records",
+    "/docs/operations/@ADR-0088-phase-u-stop-the-line",
+    "docs/operations/@ADR-0088-durable-records",
+    "docs/operations/@ADR-0088-phase-u-stop-the-line",
     # Math prime-directive enforcement script itself (class #7)
     "/scripts/coherence/_metrics/d9_prime_directive_clean.py",
+    "scripts/coherence/_metrics/d9_prime_directive_clean.py",
     # Math decoupling-history archives (historical extraction trace)
     "/docs/decoupling-history/",
+    "docs/decoupling-history/",
     # Kaplansky RESUME.md names the active Spec Kit feature
     "/docs/RESUME.md",
+    "docs/RESUME.md",
     # Kaplansky spec-kit source-of-truth
     "/specs/",
     "/.specify/",
+    "specs/",
+    ".specify/",
 ]
 
 
@@ -95,12 +106,20 @@ def fingerprint(line: str) -> str:
     return hashlib.sha256(line.strip().encode("utf-8")).hexdigest()[:16]
 
 
-def collect(repo_root: Path, repo_name: str, out):
-    """Walk one repo; write each hit's 3-line snippet to out."""
+def collect(repo_root: Path, repo_name: str, out, seen_canonicals: set):
+    """Walk one repo; write each hit's 3-line snippet to out.
+
+    Symlinks can make the same physical file appear in multiple repos
+    (e.g. scripts/collect-prime-directive-edits.py is symlinked from
+    research-institution/ to math/, pi_monitor/, kaplansky/). The
+    seen_canonicals set tracks which canonical files we've already
+    emitted; subsequent repos skip them.
+    """
     n_collected = 0
     n_skipped_sanctioned = 0
     n_skipped_link = 0
     n_skipped_overlap = 0
+    n_skipped_symlink = 0
 
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
@@ -111,6 +130,12 @@ def collect(repo_root: Path, repo_name: str, out):
         if is_sanctioned(f"/{rel}"):
             n_skipped_sanctioned += 1
             continue
+        # Symlink dedup: resolve canonical path; if we've seen it, skip.
+        canonical = path.resolve()
+        if canonical in seen_canonicals:
+            n_skipped_symlink += 1
+            continue
+        seen_canonicals.add(canonical)
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -166,7 +191,7 @@ def collect(repo_root: Path, repo_name: str, out):
             print(file=out)
             n_collected += 1
 
-    return n_collected, n_skipped_sanctioned, n_skipped_link, n_skipped_overlap
+    return n_collected, n_skipped_sanctioned, n_skipped_link, n_skipped_overlap, n_skipped_symlink
 
 
 def main():
@@ -179,6 +204,8 @@ def main():
     total_sanctioned = 0
     total_link = 0
     total_overlap = 0
+    total_symlink = 0
+    seen_canonicals: set = set()
 
     with out_path.open("w", encoding="utf-8") as out:
         print("# Prime-directive snippet dump", file=out)
@@ -194,6 +221,12 @@ def main():
         print("#   apply step will leave that line untouched.", file=out)
         print("# To delete a snippet entirely: blank out the middle line.", file=out)
         print("#", file=out)
+        print("# Symlinks: when the same physical file appears in multiple", file=out)
+        print("# repos (e.g. scripts/collect-prime-directive-edits.py), it is", file=out)
+        print("# emitted ONCE under the first repo that walked it. Later", file=out)
+        print("# repos see the canonical path and skip. The apply step only", file=out)
+        print("# touches the first emitted copy.", file=out)
+        print("#", file=out)
         print(file=out)
 
         for repo in REPOS:
@@ -202,15 +235,16 @@ def main():
                 continue
             print(f"## repo: {repo}", file=out)
             print(file=out)
-            n, ns, nl, no = collect(repo_root, repo, out)
-            print(f"# {repo}: {n} snippet(s) collected, {ns} file(s) sanctioned, {nl} link-skipped, {no} overlap-suppressed", file=sys.stderr)
+            n, ns, nl, no, nsym = collect(repo_root, repo, out, seen_canonicals)
+            print(f"# {repo}: {n} snippet(s) collected, {ns} file(s) sanctioned, {nl} link-skipped, {no} overlap-suppressed, {nsym} symlink-skipped", file=sys.stderr)
             total_collected += n
             total_sanctioned += ns
             total_link += nl
             total_overlap += no
+            total_symlink += nsym
             print(file=out)
 
-    print(f"\ntotal: {total_collected} snippet(s) written to {out_path}", file=sys.stderr)
+    print(f"\ntotal: {total_collected} snippet(s) written to {out_path} ({total_symlink} symlink-skipped)", file=sys.stderr)
 
 
 if __name__ == "__main__":
