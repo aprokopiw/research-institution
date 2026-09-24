@@ -100,7 +100,7 @@ for REPO in "${REPOS[@]}"; do
     . 2>/dev/null)
 
   # Apply the additional sanctioned-glob filter on top.
-  FILTERED=$(echo "$HITS" | grep -vEf <(printf '%s\n' "${SANCTIONED_REGEX[@]}") 2>/dev/null || echo "$HITS")
+  FILTERED=$(printf '%s\n' "$HITS" | grep -vEf <(printf '%s\n' "${SANCTIONED_REGEX[@]}") 2>/dev/null || :)
 
   if [ -z "$FILTERED" ]; then
     echo "  ✓ no unsanctioned hits"
