@@ -22,6 +22,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -261,6 +262,83 @@ def doctor(
         flags.append(f"--skip-program={program}")
     rc = subprocess.call([str(gate), *flags])
     raise typer.Exit(code=rc)
+
+
+@app.command("reset")
+def reset(
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Mutate state (default: dry-run, print only). Always required for destructive actions.",
+    ),
+    kill_processes: bool = typer.Option(
+        False,
+        "--kill-processes",
+        help="Terminate wedged supervisors (refuses if any look healthy).",
+    ),
+    purge_state: Annotated[list[Path] | None, typer.Option("--purge-state", help="Purge a state directory entirely (repeatable). Requires --apply.")] = None,
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Required confirmation for --purge-state. The CLI prints a summary and asks; --yes skips the ask.",
+    ),
+) -> None:
+    """Bring the institution to a clean, launchable state.
+
+    The default pass is a SAFE DRY-RUN: it discovers stale
+    supervisor.lock files (whose PIDs are dead) and prints what
+    it would remove. Pass ``--apply`` to actually mutate.
+
+    Cleanup tiers, escalating order:
+
+    \b
+    - stale locks: always removed when --apply is set (safe).
+    - wedged supervisors: only with --kill-processes (refuses
+      if any look healthy; use ``research stop`` for those).
+    - state directories: only with --purge-state AND --apply AND
+      --yes. The dispatcher prints the dirs + their size and
+      asks; --yes skips the ask. Always paired with a final
+      liveness check at delete time.
+
+    Per INV-005 (one supervisor per target), the verb refuses to
+    touch any lock whose PID is alive and refuses to delete any
+    state dir whose owning supervisor came back to life between
+    discovery and delete.
+
+    Dry-run exit code is 0 (success, just informative) when no
+    refusals occur, and 1 when there are refusals the operator
+    needs to address before launch.
+    """
+    from research_institution.reset import reset as do_reset
+
+    # ``Annotated[..., typer.Option()] = None`` is the canonical
+    # B008-safe default for a list option (mutable defaults +
+    # function-call defaults are both flagged). The list is
+    # never mutated by callers; the mutator accepts a tuple.
+    if purge_state is None:
+        purge_state = []
+
+    if purge_state and not apply:
+        typer.echo(
+            "FATAL: --purge-state requires --apply (destructive action; dry-run is for inspection)",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if purge_state and not yes:
+        typer.echo(
+            "FATAL: --purge-state requires --yes confirmation. "
+            "Re-run with --yes to confirm; without it, only --kill-processes + stale-lock cleanup will run.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    report = do_reset(
+        purge_state=tuple(purge_state),
+        kill_processes=kill_processes,
+        dry_run=not apply,
+    )
+    typer.echo(report.render())
+    raise typer.Exit(code=0 if report.ok else 1)
 
 
 @app.command("start")

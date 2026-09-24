@@ -1,10 +1,13 @@
 """Cross-repo type-identity contract.
 
 The research-institution side imports the typed wire shapes from
-pi_monitor by identity (per @ADR-0006, @ADR-0007, @ADR-0009). This
-test pins the identity contract: a drift in pi-monitor's wire shape
-surfaces here as a class-identity change that pyright flags at
-every import site.
+pi_monitor by identity (per @ADR-0006, @ADR-0007; @ADR-0009 was
+the original cross-repo ask for a pi-monitor supervisor-side
+repeat circuit, since superseded on 2026-09-20 by @ADR-0011 and
+retained here as a historical cross-reference). This test pins the
+identity contract: a drift in pi-monitor's wire shape surfaces
+here as a class-identity change that pyright flags at every
+import site.
 
 Identity pairs (ri-side name = pi-monitor canonical):
 

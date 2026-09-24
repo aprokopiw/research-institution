@@ -38,8 +38,12 @@ in the others' lanes.
 - Answers: `NOOP` / `NUDGE` / `ABORT_AND_CONTINUE` /
   `RESTART_SAME_SESSION` / `START_FRESH_SESSION` / `STOP`.
 - Vocabulary: `@ADR-0009-bounded-recovery-and-soft-circuit`
-  (pi_monitor) and `@ADR-0016-wait-and-lease-semantics`
-  (pi_monitor).
+  (pi_monitor; **superseded by `@ADR-0011` on 2026-09-20** as a
+  cross-repo ask — kept here as historical postmortem; the
+  live recovery vocabulary now lives in `@ADR-0016-wait-and-lease-semantics`
+  pi_monitor and the no-delta-loop fix is
+  `@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult`)
+  and `@ADR-0016-wait-and-lease-semantics` (pi_monitor).
 
 **Does NOT decide:** what the worker is working on, what the next
 step in any domain is, whether a mathematical proof is making

@@ -35,10 +35,46 @@ This repo is governed by the same prime directive as math-engine
   example.
 
 - **The prime-directive grep** (run before every commit that
-  touches a durable path) is the canonical enforcement. Hits
-  outside the sanctioned exception classes are blocking
-  defects under the corresponding plan's stop-the-line
-  conditions.
+  touches a durable path) is the canonical enforcement. The
+  strengthened pattern catches every variant agents write —
+  `plan-013`, `Plan-013`, `PLAN_013`, `Plan 002`, `plan013`,
+  `spec-011`, `Spec-009`, `spec 011` — and rejects
+  false-positives like `planner`, `specify`, `spec_kit`:
+
+  ```bash
+  # Canonical strengthened pattern (ERE; portable across grep -E / bash)
+  (\b[Pp][Ll][Aa][Nn]|\b[Ss][Pp][Ee][Cc])[-_ ]?[0-9]{2,}
+  ```
+
+  Run the gate locally with `make check-prime-directive`
+  (calls `scripts/check-prime-directive.sh`); it exits
+  non-zero on any unsanctioned hit and prints the
+  `file:line` list. The CI gate is the same script, wired
+  into each repo's Makefile.
+
+  **Prevention at the agent layer.** A pi extension
+  (`~/.pi/agent/extensions/prime-directive-guard.ts`)
+  hooks `tool_call` for `write` and `edit` and blocks any
+  attempted write that contains a forbidden literal. The
+  block message points the agent at the canonical
+  durable-anchor mapping (see "Anchor ID namespace
+  convention" above). The extension auto-loads; no manual
+  configuration is required. Attempts are logged to
+  `.pi/prime-directive-violations.log` per repo so
+  operators can see which agents are still writing the
+  forbidden forms.
+
+  When the extension blocks you, rewrite the content to
+  cite the durable anchor (`@ADR-NNNN`, `@INV-NNNN`,
+  `@CTR-NNNN`) instead of the transient literal. If your
+  file is one of the sanctioned paths (AGENTS.md,
+  closure-audit.md, transient plan dirs under `.pi-glla/`
+  or `.agents/transient/`, vendored `.venv/`, etc.), the
+  reference is allowed through.
+
+  Hits outside the sanctioned exception classes are
+  blocking defects under the corresponding plan's
+  stop-the-line conditions.
 
 ## This repo's relationship to math-engine's prime directive
 
