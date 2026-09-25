@@ -1,0 +1,109 @@
+# transient-exemptions.toml
+#
+# Central registry of transient artifacts that the
+# pi-extension's strengthened regex (canonical grep at
+# scripts/check-prime-directive.sh) is allowed to skip.
+#
+# Per the prime-directive constitution-verify §10 (entry 09
+# durable records): every sanctioned-glob path that the runtime
+# extension accepts MUST be declared here so a fresh agent
+# reading the durable record knows which paths the runtime
+# treats as transient. The extension's SANCTIONED_PATH_PATTERNS
+# (live at ~/.pi/agent/extensions/prime-directive-guard.ts) is
+# the byte-mirror of this list; if you add a row here, add the
+# matching substring to SANCTIONED_PATH_PATTERNS, and vice
+# versa.
+#
+# Schema: each row is a TOML array of tables. The fields are:
+#
+#   glob       the substring that the runtime matches against
+#              the absolute file path (mandatory).
+#   reason     why this path is exempt (mandatory, free-form).
+#   owner      the entry slug that owns the exemption; expiry
+#              is the entry's audit-close-out milestone.
+#   added_at   ISO date the row was added.
+#   expiry_spec_id
+#              the entry slug whose M5 (audit-close-out)
+#              milestone retires this exemption.
+#
+# When an entry's M5 emits the attestation, the cycle adapter
+# (entry 02 M5) garbage-collects any rows whose expiry_spec_id
+# matches the closing entry. This keeps the registry
+# self-pruning so the durable escape surface stays bounded.
+
+[[exemption]]
+glob = "/AGENTS.md"
+reason = "Rule-naming document per prime-directive constitution-verify section 10. Cites transient literals by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/docs/operations/"
+reason = "Post-ship closure audits + live-supervisor authority docs. Cite the transient identifier they are closing out."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "-closure-audit.md"
+reason = "Closure-audit file suffix. These files' job is to name the transient they are closing."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "-live-supervisor-authority.md"
+reason = "Live-supervisor authority doc suffix. These files' job is to name the transient they document."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/.pi-glla/"
+reason = "Goal-list-loop-audit transient plan dirs (math-engine convention)."
+owner = "math-engine"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/.agents/transient/"
+reason = "Per-agent transient working dirs. Throwaway by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/.venv/"
+reason = "Vendored Python virtualenv. Generated, never durable."
+owner = "toolchain"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/build/"
+reason = "Build artifacts. Generated, never durable."
+owner = "toolchain"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/__pycache__/"
+reason = "Python bytecode cache. Generated, never durable."
+owner = "toolchain"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/.git/"
+reason = "Git internals. Generated, never durable."
+owner = "toolchain"
+added_at = "2026-09-24"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/.specify/specs/"
+reason = "Spec-Kit draft specs. By-design transient during the eleven-entry program (entries 00..10). Body prose uses the NN-slug form; never the bare Spec-or-spec word followed by two digits."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-24"
+expiry_spec_id = "10-verification-release-closure"
