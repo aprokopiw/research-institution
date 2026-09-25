@@ -340,3 +340,56 @@ owner = "01-test-suite-rationalization"
 added_at = "2026-09-25"
 expiry_spec_id = "01-test-suite-rationalization"
 
+# --- entry 02: pi_monitor fake-Pi consolidation ---
+# pi_monitor's pre-existing test + module + doc files reference
+# transient spec-NNN identifiers in docstrings, prose, and module
+# names (e.g. ``spec 007 budget policy``, ``spec 009 T011``). Per
+# pi_monitor's AGENTS.md "Do not grandfather" rule, these are not
+# grandfathered locally — they are real violations today. The
+# canonical mechanism (per §10) is to enumerate them here with
+# expiry_spec_id coupling so a follow-up tickable renames them
+# against durable ADR/INV/CTR anchors. Expiry couples the rename
+# to entry 02's audit-close-out.
+#
+# Each row is a substring match against the absolute file path,
+# so the granularity is per-directory or per-file. pi_monitor
+# test docstrings naming specs 001..012 are grandfathered as a
+# single row; module docstrings in src/pi_monitor/protocol/ and
+# src/pi_monitor/work/ get a separate row each so an entry 09
+# audit can retire them in cohorts.
+
+[[exemption]]
+glob = "/pi_monitor/tests/test_"
+reason = "pi_monitor test docstrings cite transient spec-NNN identifiers by name (e.g. 'spec 007 budget policy'). The docstring's job is to *name* the spec it covers; renaming requires durable anchor citations per entry 02."
+owner = "02-fake-pi-consolidation"
+added_at = "2026-09-25"
+expiry_spec_id = "02-fake-pi-consolidation"
+
+[[exemption]]
+glob = "/pi_monitor/src/pi_monitor/protocol/"
+reason = "pi_monitor protocol module docstrings cite transient spec-NNN identifiers (e.g. 'spec 011'). The docstring's job is to name the spec the module implements; renaming requires durable anchor citations."
+owner = "02-fake-pi-consolidation"
+added_at = "2026-09-25"
+expiry_spec_id = "02-fake-pi-consolidation"
+
+[[exemption]]
+glob = "/pi_monitor/src/pi_monitor/work/"
+reason = "pi_monitor work-source module docstrings cite transient spec-NNN identifiers (e.g. 'spec 011'). The docstring's job is to name the spec the module implements; renaming requires durable anchor citations."
+owner = "02-fake-pi-consolidation"
+added_at = "2026-09-25"
+expiry_spec_id = "02-fake-pi-consolidation"
+
+[[exemption]]
+glob = "/pi_monitor/src/pi_monitor/config/config.py"
+reason = "pi_monitor config.py module docstring cites transient spec-NNN identifiers. The docstring's job is to name the spec the config implements; renaming requires durable anchor citations."
+owner = "02-fake-pi-consolidation"
+added_at = "2026-09-25"
+expiry_spec_id = "02-fake-pi-consolidation"
+
+[[exemption]]
+glob = "/pi_monitor/docs/reference/"
+reason = "pi_monitor reference docs cite transient spec-NNN identifiers (e.g. spec 001..012) when describing the audit event vocabulary and module registry. The doc's job is to *name* the spec it documents; renaming requires durable anchor citations."
+owner = "02-fake-pi-consolidation"
+added_at = "2026-09-25"
+expiry_spec_id = "02-fake-pi-consolidation"
+
