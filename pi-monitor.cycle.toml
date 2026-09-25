@@ -1,0 +1,58 @@
+# pi-monitor configuration for the research-institution
+# Spec-Kit cycle (entries 00..10).
+#
+# Loaded by `pi-monitor run --config pi-monitor.cycle.toml` (the
+# operator script `research-institution/scripts/spec-kit-cycle.sh`
+# wraps this). The supervisor walks the eleven entries in lex
+# order and gates each entry's audit-close-out on its META.md +
+# per-entry attestation JSON.
+#
+# Design notes:
+#   - `project.roadmap = "spec-kit-cycle"` is the new value
+#     registered in `pi_monitor.config.config.RoadmapKind`. The
+#     cycle adapter composes the canonical `SpecKitTaskSource`
+#     scanner and synthesizes one `[audit-close-out]` row per
+#     entry dir.
+#   - `project.task_globs` MUST end in `tasks.md` for the cycle
+#     roadmap (the cycle's per-spec scanner relies on a single
+#     `tasks.md` file per entry).
+#   - `project.blocked_escalate_seconds = 1800` escalates a
+#     persistently blocked frontier to `OperatorRequired` after
+#     30 minutes so a human can intervene without spinning the
+#     worker.
+#   - `worker.approve_project_files = true` lets the supervised
+#     worker read project-local files (the .specify/ tree).
+#   - `worker.runtime = "pi"` selects the canonical `pi` worker
+#     adapter that constructs `pi --mode rpc --name ...`.
+#   - `alerts.adapter = "none"` is quiet; incidents are audited
+#     but nothing is sent off-box.
+
+[project]
+name = "research-institution"
+root = "."
+roadmap = "spec-kit-cycle"
+task_globs = [".specify/specs/*/tasks.md"]
+blocked_escalate_seconds = 1800
+math_artifacts_globs = [
+    ".specify/specs/*/META.md",
+    ".specify/specs/*/.pi-prime-attestations/*.json",
+]
+
+[worker]
+runtime = "pi"
+command = "pi"
+approve_project_files = true
+
+[judge]
+every_seconds = 1800
+
+[health]
+poll_seconds = 60
+rpc_failures_before_restart = 3
+long_running_stall_seconds = 1800
+
+[alerts]
+adapter = "none"
+
+[wait]
+max_backoff_seconds = 300

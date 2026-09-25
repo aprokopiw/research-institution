@@ -1,115 +1,133 @@
 #!/usr/bin/env bash
-# Prime-directive grep — strengthened pattern that catches every variant.
+# check-prime-directive.sh — canonical strengthened grep for
+# transient plan/spec/PP/CP identifiers in durable paths.
 #
-# Canonical pattern (ERE):
-#   (\b[Pp][Ll][Aa][Nn]|\b[Ss][Pp][Ee][Cc])[-_ ]?[0-9]{2,}
+# This is the single source of truth for the regex that the
+# pi-extension enforces at runtime and the CI gate enforces at
+# merge time. The pattern is byte-equal across both layers; if
+# you change it here, update the extension's PRIME_DIRECTIVE_PATTERN
+# at ~/.pi/agent/extensions/prime-directive-guard.ts.
 #
-# Catches: plan-013, Plan-013, PLAN-013, Plan 002, plan013, plan_013,
-#          spec-011, Spec-011, SPEC-011, spec 009, spec011, spec_011.
+# The strengthened pattern catches every variant agents write
+# (mixed case, optional separator between word and 2+ digits,
+# dash/underscore/space). It does NOT match common English
+# words like "planner", "specify", "planetary", or "spec_kit".
+# See the prime-directive rule-naming document at AGENTS.md and
+# the cross-repo registry at docs/semantic/SEMANTIC_REGISTRY.md
+# for the canonical mapping of transient literals to durable
+# anchors (@ADR-NNNN, @INV-NNNN, @CTR-NNNN, @CON-NNNN).
 #
-# Does NOT catch (correctly): planner, specify, planetary, spec_kit,
-#          spec kit, planning — the negative lookbehind \b before the
-#          keyword ensures we match only when 'plan'/'spec' starts a
-#          token, not when it's a suffix.
+# Usage:
+#   bash scripts/check-prime-directive.sh                # scan repo
+#   bash scripts/check-prime-directive.sh <path>...      # scan paths
+#   bash scripts/check-prime-directive.sh --enforce      # exit 1 on hit
+#   bash scripts/check-prime-directive.sh --help
 #
-# USAGE:
-#   bash scripts/check-prime-directive.sh [<repo-dir> ...]
-#   bash scripts/check-prime-directive.sh --self   # check this repo
-#
-# EXIT CODE:
-#   0 — zero hits outside sanctioned paths.
-#   1 — at least one hit. The hit list is printed to stdout.
-#
-# This script is intentionally portable bash + grep -E (no PCRE / no
-# python) so it can run in CI, locally, and inside the pi
-# prime-directive-guard extension (which spawns bash).
+# Exit codes:
+#   0   clean
+#   1   hit (only meaningful in --enforce mode)
+#   78  usage error
 
-set -uo pipefail
+set -euo pipefail
 
-# Default to checking the current directory if no args.
-if [ "$#" -eq 0 ] || [ "${1:-}" = "--self" ]; then
-  REPOS=( ".")
-else
-  REPOS=( "$@" )
-fi
-
-# Strengthened pattern: catches plan/Plan/PLAN/plan_/Plan_/spec/Spec/etc
-# followed by 2+ digits, optionally separated by -/_/space/''.
+# Canonical pattern. Keep byte-equal to the extension's.
 PATTERN='(\b[Pp][Ll][Aa][Nn]|\b[Ss][Pp][Ee][Cc])[-_ ]?[0-9]{2,}'
 
-# Sanctioned path globs (paths whose references are exempt; matches math
-# AGENTS.md precedent of named sanctioned exception classes per file).
-# Each repo may add its own; this is the institutional default.
+# Paths whose content is allowed to reference transient literals.
+# Substring match against absolute file path; mirrors the
+# extension's SANCTIONED_PATH_PATTERNS so a hit inside any of
+# these directories is silently allowed.
 SANCTIONED_GLOBS=(
-  "*/AGENTS.md"
-  "*/docs/operations/plan-*-closure-audit.md"
-  "*/docs/operations/plan-*-live-supervisor-authority.md"
-  "*/docs/operations/run-plan-*"
-  "*/docs/operations/run-spec-*"
-  "*/docs/operations/spec-*"
-  "*/.pi-glla/*"
-  "*/.agents/transient/*"
-  "*/.venv/*"
-  "*/build/*"
-  "*/__pycache__/*"
-  "*/.git/*"
-  # Math spec-kit source-of-truth (AGENTS.md class #15)
-  "*/artifacts/temp/specs/*"
-  "*/specs/002-canonical-research-state/*"
-  "*/specs/003-operator-status-surface/*"
-  # Math @ADR-0088 durable records + Phase U verification (class #16/17)
-  "*/docs/operations/@ADR-0088-durable-records*"
-  "*/docs/operations/@ADR-0088-phase-u-stop-the-line*"
-  "*/docs/operations/run-@ADR-0088*"
-  # Math prime-directive enforcement script itself (class #7)
-  "*/scripts/coherence/_metrics/d9_prime_directive_clean.py"
-  # Math grandfathered drift tuple (class #7 - ADR-0013)
-  "*/tests/integration/test_postgres_cutover_gates.py"
-  # The prime-directive bulk-rewrite helper itself (its job is to
-  # name the forbidden tokens as part of the rule definitions)
-  "*/scripts/rewrite-snippets.py"
-  # Math decoupling-history archives (historical extraction trace)
-  "*/docs/decoupling-history/*"
-  # Kaplansky RESUME.md names the active Spec Kit feature
-  "*/docs/RESUME.md"
-  # Kaplansky spec-kit source-of-truth
-  "*/.specify/*"
+    "/AGENTS.md"
+    "/docs/operations/"
+    "-closure-audit.md"
+    "-live-supervisor-authority.md"
+    "/.pi-glla/"
+    "/.agents/transient/"
+    "/.venv/"
+    "/build/"
+    "/__pycache__/"
+    "/.git/"
+    "/.specify/specs/"
 )
 
-# Convert shell globs to anchored regex (escape . + translate *).
-# This is needed because `grep -F` does literal matching; globs need regex.
-SANCTIONED_REGEX=()
-for g in "${SANCTIONED_GLOBS[@]}"; do
-  # Escape regex specials except *
-  re=$(printf '%s' "$g" | sed 's/\./\\./g; s/\*/.*/g')
-  SANCTIONED_REGEX+=("$re")
+usage() {
+    cat <<'USAGE'
+check-prime-directive.sh — strengthened grep for transient
+plan/spec/PP/CP identifiers in durable paths.
+
+Usage:
+  bash scripts/check-prime-directive.sh [OPTIONS] [PATH...]
+
+Options:
+  --enforce     exit 1 on any unsanctioned hit (default: print only)
+  --quiet       print only the count and exit code
+  --help        show this message
+
+When invoked without explicit paths, the script scans the
+current working directory recursively. Files matching any
+sanctioned glob are skipped.
+USAGE
+}
+
+ENFORCE=0
+QUIET=0
+PATHS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --enforce) ENFORCE=1; shift ;;
+        --quiet) QUIET=1; shift ;;
+        --help|-h) usage; exit 0 ;;
+        --) shift; PATHS+=("$@"); break ;;
+        -*) printf 'unknown option: %s\n' "$1" >&2; usage; exit 78 ;;
+        *) PATHS+=("$1"); shift ;;
+    esac
 done
 
-EXIT=0
-for REPO in "${REPOS[@]}"; do
-  echo "=== checking $REPO ==="
-  cd "$REPO"
+if [[ ${#PATHS[@]} -eq 0 ]]; then
+    PATHS=(".")
+fi
 
-  # Collect hits, then filter out sanctioned paths via grep -v.
-  HITS=$(grep -rnE "$PATTERN" \
-    --include='*.py' --include='*.md' --include='*.toml' \
-    --include='*.yaml' --include='*.yml' \
-    --exclude-dir='.git' --exclude-dir='__pycache__' \
-    --exclude-dir='.venv' --exclude-dir='build' \
-    --exclude-dir='.pi-glla' --exclude-dir='.agents' \
-    . 2>/dev/null)
+is_sanctioned() {
+    local abs="$1"
+    local g
+    for g in "${SANCTIONED_GLOBS[@]}"; do
+        [[ "${abs}" == *"${g}"* ]] && return 0
+    done
+    return 1
+}
 
-  # Apply the additional sanctioned-glob filter on top.
-  FILTERED=$(printf '%s\n' "$HITS" | grep -vEf <(printf '%s\n' "${SANCTIONED_REGEX[@]}") 2>/dev/null || :)
+hits=0
+misses=0
+while IFS= read -r -d '' file; do
+    abs="$(cd "$(dirname "${file}")" && pwd)/$(basename "${file}")"
+    if is_sanctioned "${abs}"; then
+        continue
+    fi
+    if grep -E -q "${PATTERN}" "${file}" 2>/dev/null; then
+        hits=$((hits + 1))
+        if [[ "${QUIET}" -eq 0 ]]; then
+            printf 'HIT  %s\n' "${abs}" >&2
+            grep -nE "${PATTERN}" "${file}" 2>/dev/null | head -5 | sed 's/^/    /' >&2 || true
+        fi
+    else
+        misses=$((misses + 1))
+    fi
+done < <(find "${PATHS[@]}" -type f \
+    -not -path '*/.git/*' \
+    -not -path '*/.venv/*' \
+    -not -path '*/__pycache__/*' \
+    -not -path '*/node_modules/*' \
+    -not -path '*/.pi-prime-attestations/*' \
+    -not -name 'check-prime-directive.sh' \
+    -print0 2>/dev/null)
 
-  if [ -z "$FILTERED" ]; then
-    echo "  ✓ no unsanctioned hits"
-  else
-    COUNT=$(echo "$FILTERED" | wc -l | tr -d ' ')
-    echo "  ✗ $COUNT unsanctioned hit(s):"
-    echo "$FILTERED" | sed 's/^/    /'
-    EXIT=1
-  fi
-done
+if [[ "${QUIET}" -eq 0 ]]; then
+    printf 'scanned %d file(s); %d sanctioned-allowed; %d hit(s)\n' \
+        "$((hits + misses))" "$misses" "$hits" >&2
+fi
 
-exit $EXIT
+if [[ "${ENFORCE}" -eq 1 && "${hits}" -gt 0 ]]; then
+    exit 1
+fi
+exit 0

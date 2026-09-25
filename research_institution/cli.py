@@ -34,6 +34,7 @@ from research_institution.contracts import (
     TaskKind,
     gate_verdict_from_task_kind,
 )
+from research_institution.prime_directive import app as prime_directive_app
 from research_institution.contracts.skill_template import render_skill
 from research_institution.paths import (
     agent_skills_dir,
@@ -847,6 +848,7 @@ def install_skills() -> None:
 
 
 def main() -> None:
+    app.add_typer(prime_directive_app, name="prime_directive")
     app()
 
 
