@@ -46,6 +46,8 @@ says "to read `@ADR-0091`, look at `math/docs/semantic/adr/...`".
 | `@ADR-0095` | `research-institution/docs/semantic/adr/` | prime-directive mechanical enforcement is a single canonical script with byte-equal cross-repo invocation |
 | `@INV-0095` | `research-institution/docs/semantic/invariants/` | prime-directive durable anchors are owned by research-institution; siblings cite by reference |
 | `@CTR-0095` | `research-institution/docs/semantic/contracts/` | prime-directive check-script contract — regex, sanctioned-globs, exit codes, selftest |
+| `@ADR-0096` | `research-institution/docs/semantic/adr/` | audit-close-out is runtime evidence, not witness prose — cannot-claim-done rows are machine-verifiable |
+| `@CTR-0096` | `research-institution/docs/semantic/contracts/` | audit-close-out runtime-evidence contract — schema for `.pi-prime-attestations/<slug>.audit.json` and cycle adapter intersection gate |
 
 Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 

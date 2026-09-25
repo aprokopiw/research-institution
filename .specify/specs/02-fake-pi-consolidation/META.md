@@ -15,7 +15,17 @@ spec_id = "02-fake-pi-consolidation"
 owner_repo = "pi_monitor"
 owner_repos = ["pi_monitor", "research-institution"]
 baseline_sha = "638c752aab1445e45daed74d1e476e0602d21ec1"
-completion_sha = "9fe59adb08f59d0c58c2d95254192237f684fc8b"
+# Re-stamped 2026-09-25 against the reachable pi_monitor HEAD.
+# Prior completion_sha (9fe59adb08f59d0c58c2d95254192237f684fc8b) was
+# not in pi_monitor's git history on this checkout — the v2 fingerprint
+# re-emit + SHA replacement closes the witness-vs-fact gap that the
+# prior ratification had. See `completion_sha_history` below and the
+# @ADR-0096-prime-directive-runtime-verification ADR for the durable
+# resolution.
+completion_sha = "99cd49105775ef9e7ad3efa08825606bb750e6e5"
+completion_sha_history = [
+  "9fe59adb08f59d0c58c2d95254192237f684fc8b",  # prior ratification; unreachable in pi_monitor HEAD on this checkout
+]
 gate_report_digest = "2baabc312a1e9b4fbebb94fc13a71a52e3c42851792dc6e9433a5b3c1a5659b1"
 durable_anchors_added = []
 durable_anchors_cited = [
@@ -51,8 +61,12 @@ section_12 = "PASS"  # no new cross-repo records (per exclusion list)
 A claim of done is invalid if any of the following holds at the
 candidate-completion SHA. Each row records the actual
 `PASS / FAIL / BLOCKED / NOT_RUN / NOT_APPLICABLE` of the
-verification step at `completion_sha = 9fe59adb08f59d0c58c2d95254192237f684fc8b` (research-institution
-HEAD; the cycle adapter reads the META from this repo's spec dir).
+verification step at `completion_sha = 99cd49105775ef9e7ad3efa08825606bb750e6e5` (pi_monitor
+HEAD; the cycle adapter reads the META from this repo's spec dir but the
+candidate-completion SHA must live in `owner_repo`'s history; the prior
+SHA 9fe59adb08f59d0c58c2d95254192237f684fc8b was unreachable in pi_monitor
+on this checkout and is preserved in `completion_sha_history`).
+
 
 | # | Clause | Verified by | Result |
 |---|---|---|---|

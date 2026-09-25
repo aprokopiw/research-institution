@@ -15,7 +15,15 @@ spec_id = "03-domain-verification-completeness"
 owner_repo = "kaplansky"
 owner_repos = ["kaplansky", "math", "research-institution"]
 baseline_sha = "94fa101aab1445e45daed74d1e476e0602d21ec1"
-completion_sha = "075233b851d643b3ed43cb0606fe6c33ae8559b4"
+# Re-stamped 2026-09-25 against the reachable kaplansky HEAD.
+# Prior completion_sha (075233b851d643b3ed43cb0606fe6c33ae8559b4) was
+# not in kaplansky's git history on this checkout — same witness-vs-fact
+# gap as entry 02; the SHA replacement closes it. The prior SHA is
+# preserved in `completion_sha_history` for traceability.
+completion_sha = "4a32971b9a79dd1cb2cadf17aaf6e73c3534b81b"
+completion_sha_history = [
+  "075233b851d643b3ed43cb0606fe6c33ae8559b4",  # prior ratification; unreachable in kaplansky HEAD on this checkout
+]
 gate_report_digest = "399f06ffe7cfe3b2b9c6f76d0ac57639afa87ac5e4b5eb898614c209b33ca22c"
 durable_anchors_added = []
 durable_anchors_cited = [
