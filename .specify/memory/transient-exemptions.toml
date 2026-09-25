@@ -477,3 +477,16 @@ reason = "entry 07 deployment / canary / soak tests carry transient spec-NNN ref
 owner = "07-deployment-canary-soak"
 added_at = "2026-09-25"
 expiry_spec_id = "07-deployment-canary-soak"
+
+# --- entry 08: installed compatibility / migration / disaster recovery ---
+# research-institution's compat/ package is new with entry 08.
+# The compat runners reference their origin in transient
+# spec-NNN / plan-NNN docstrings; renaming is a mechanical
+# rewrite task that a follow-up tickable performs.
+
+[[exemption]]
+glob = "/research_institution/gates/verify_simulation/compat/"
+reason = "entry 08 compat runners carry transient spec-NNN references in docstrings; follow-up tickable rewrites against durable anchors."
+owner = "08-installed-compatibility-recovery"
+added_at = "2026-09-25"
+expiry_spec_id = "08-installed-compatibility-recovery"

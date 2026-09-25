@@ -52,6 +52,11 @@ _VALID_TIERS: tuple[str, ...] = (
     "deployment",
     "provider-canary",
     "soak",
+    "compatibility-matrix",
+    "rollback",
+    "backup-restore",
+    "corruption",
+    "disk-pressure",
 )
 
 
@@ -159,6 +164,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_provider_canary_tier(args)
     if args.tier == "soak":
         return _run_soak_tier(args)
+    if args.tier == "compatibility-matrix":
+        return _run_compat_matrix_tier(args)
+    if args.tier == "rollback":
+        return _run_rollback_tier(args)
+    if args.tier == "backup-restore":
+        return _run_backup_restore_tier(args)
+    if args.tier == "corruption":
+        return _run_corruption_tier(args)
+    if args.tier == "disk-pressure":
+        return _run_disk_pressure_tier(args)
     if args.scenario is not None:
         try:
             scenarios = [scenario_lookup(args.scenario)]
@@ -184,6 +199,159 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{r.scenario_name}: {r.verdict} ({r.elapsed_seconds:.2f}s)")
     failed = [r for r in reports if r.verdict != "PASS"]
     return 1 if failed else 0
+
+
+def _run_compat_matrix_tier(args: argparse.Namespace) -> int:
+    """Entry 08 M2: compatibility-matrix tier."""
+    from research_institution.gates.verify_simulation.compat import (
+        CompatMatrixRunner,
+    )
+
+    runner = CompatMatrixRunner(run_live=args.live)
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "cells": [
+                        {
+                            "python_version": c.python_version,
+                            "repo": c.repo,
+                            "distribution_version": c.distribution_version,
+                            "verdict": c.verdict,
+                            "detail": c.detail,
+                        }
+                        for c in report.cells
+                    ],
+                    "matrix_source": report.matrix_source,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(
+            f"compat-matrix: {report.verdict} "
+            f"({len(report.cells)} cells)"
+        )
+        for c in report.cells:
+            print(f"  {c.repo}@py{c.python_version}: {c.verdict}")
+    return 0 if report.verdict in ("PASS", "BLOCKED") else 1
+
+
+def _run_rollback_tier(args: argparse.Namespace) -> int:
+    """Entry 08 M3: rollback tier."""
+    from research_institution.gates.verify_simulation.compat import (
+        RollbackRunner,
+    )
+
+    runner = RollbackRunner()
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "version_n": report.version_n,
+                    "version_n_minus_1": report.version_n_minus_1,
+                    "n_state_readable": report.n_state_readable,
+                    "n_minus_1_state_readable": report.n_minus_1_state_readable,
+                    "redispatch_detected": report.redispatch_detected,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"rollback: {report.verdict} ({report.detail})")
+    return 0 if report.verdict == "PASS" else 1
+
+
+def _run_backup_restore_tier(args: argparse.Namespace) -> int:
+    """Entry 08 M3: backup-restore tier."""
+    from research_institution.gates.verify_simulation.compat import (
+        BackupRestoreRunner,
+    )
+
+    runner = BackupRestoreRunner()
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "backup_path": str(report.backup_path)
+                    if report.backup_path
+                    else None,
+                    "restore_path": str(report.restore_path)
+                    if report.restore_path
+                    else None,
+                    "pre_backup_sha": report.pre_backup_sha,
+                    "post_restore_sha": report.post_restore_sha,
+                    "duplicate_executions": report.duplicate_executions,
+                    "duplicate_reports": report.duplicate_reports,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"backup-restore: {report.verdict} ({report.detail})")
+    return 0 if report.verdict == "PASS" else 1
+
+
+def _run_corruption_tier(args: argparse.Namespace) -> int:
+    """Entry 08 M4: corruption tier."""
+    from research_institution.gates.verify_simulation.compat import (
+        CorruptionRunner,
+    )
+
+    runner = CorruptionRunner()
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "audit_corrupt_fail_closed": report.audit_corrupt_fail_closed,
+                    "state_corrupt_fail_closed": report.state_corrupt_fail_closed,
+                    "ledger_corrupt_fail_closed": report.ledger_corrupt_fail_closed,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"corruption: {report.verdict} ({report.detail})")
+    return 0 if report.verdict == "PASS" else 1
+
+
+def _run_disk_pressure_tier(args: argparse.Namespace) -> int:
+    """Entry 08 M4: disk-pressure tier."""
+    from research_institution.gates.verify_simulation.compat import (
+        DiskPressureRunner,
+    )
+
+    runner = DiskPressureRunner()
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "enospc_detected": report.enospc_detected,
+                    "truncated_write_detected": report.truncated_write_detected,
+                    "permission_denied_detected": report.permission_denied_detected,
+                    "rename_failure_detected": report.rename_failure_detected,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"disk-pressure: {report.verdict} ({report.detail})")
+    return 0 if report.verdict == "PASS" else 1
 
 
 def _run_deployment_tier(args: argparse.Namespace) -> int:
