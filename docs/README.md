@@ -29,6 +29,7 @@ After step 4, you have the full picture. For deeper work:
 | Run the verification gates | [`operations/verification-gates.md`](operations/verification-gates.md) |
 | Fix the no-delta loop | [`operations/plan-013-live-supervisor-authority.md`](operations/plan-013-live-supervisor-authority.md) |
 | Read the post-ship trace for @ADR-0011 | [`operations/plan-013-closure-audit.md`](operations/plan-013-closure-audit.md) |
+
 | Read the kaplansky operator UX | [`operations/kaplansky-operator-ux.md`](operations/kaplansky-operator-ux.md) |
 | Plan test hardening (roadmap) | [`operations/test-hardening-plan.md`](operations/test-hardening-plan.md) |
 | Apply math's decisions to the roadmap | [`operations/architecture-review-gate.md`](operations/architecture-review-gate.md) (the rare `--skip-gate` escape hatch) |

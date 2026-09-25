@@ -1,4 +1,4 @@
-"""Pin the wire schema to byte-identical-to-pre-plan-013.
+"""Pin the wire schema to byte-identical-to-pre-@ADR-0011.
 
 Per @CTR-0021-wire-protocol-version-pinned, @ADR-0011 ships
 without a wire schema bump. This test pins the wire-side
@@ -79,7 +79,7 @@ def test_decision_kind_universe_is_four() -> None:
 
 
 def test_role_name_literal_is_unchanged() -> None:
-    """Plan-013 does NOT add 'MATHEMATICAL_RESEARCHER' / 'MATHEMATICAL_ARCHITECT' to the wire."""
+    """@ADR-0011 does NOT add 'MATHEMATICAL_RESEARCHER' / 'MATHEMATICAL_ARCHITECT' to the wire."""
     expected = {
         "default",
         "primary",
@@ -118,7 +118,7 @@ def test_canonical_reason_codes_is_pi_monitor_set() -> None:
 
 
 def test_os_extended_reason_codes_contains_only_plan_013_additions() -> None:
-    """``OS_EXTENDED_REASON_CODES`` (the plan-013 OS-side additions) is the two new values."""
+    """``OS_EXTENDED_REASON_CODES`` (the @ADR-0011 OS-side additions) is the two new values."""
     assert {
         REASON_ARCHITECTURE_REVIEW_REQUIRED,
         REASON_ARCHITECTURE_REVIEW_DISPATCH,
@@ -126,7 +126,7 @@ def test_os_extended_reason_codes_contains_only_plan_013_additions() -> None:
 
 
 def test_extended_reason_codes_is_superset_of_canonical() -> None:
-    """``EXTENDED_REASON_CODES`` = pi_monitor's set ∪ plan-013 OS-side extensions."""
+    """``EXTENDED_REASON_CODES`` = pi_monitor's set ∪ @ADR-0011 OS-side extensions."""
     assert EXTENDED_REASON_CODES >= CANONICAL_REASON_CODES
     assert (
         EXTENDED_REASON_CODES - CANONICAL_REASON_CODES

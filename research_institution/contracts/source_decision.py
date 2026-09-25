@@ -90,7 +90,7 @@ from pi_monitor.work.work_source import (
 # @ADR-0011 (no-delta loop fix) additions.
 #
 # These two reason codes ride along on the existing ``reason_code: str``
-# field — the wire schema is byte-identical to pre-plan-013. They are
+# field — the wire schema is byte-identical to pre-@ADR-0011. They are
 # not yet inside pi_monitor's ``CanonicalReasonCode`` Literal because
 # @ADR-0011 ships without touching pi_monitor; research-institution
 # emits them and the supervisor's wire codec accepts them as opaque
@@ -124,7 +124,7 @@ CANONICAL_REASON_CODES: frozenset[str] = _PM_CANONICAL_REASON_CODES
 
 #: @ADR-0011 OS-side reason-code additions. These ride along on the
 #: existing ``reason_code: str`` field — the wire schema is byte-
-#: identical to pre-plan-013 because pi_monitor's wire codec accepts
+#: identical to pre-@ADR-0011 because pi_monitor's wire codec accepts
 #: any string. They are documented in this module until a future
 #: math-maintainer review lifts them into pi_monitor's wire Literal
 #: under ``@CTR-0021-wire-protocol-version-pinned``.

@@ -12,7 +12,7 @@ related:
   - docs/operations/@ADR-0011-live-supervisor-authority.md
   - docs/concepts/cross-repo-decision-boundary.md
 date: 2026-09-20
-supersedes: pre-plan-013 operator-decision framing (now historical context §5)
+supersedes: pre-@ADR-0011 operator-decision framing (now historical context §5)
 ---
 
 # Architecture-review gate — model-decision framing
@@ -142,7 +142,7 @@ exists for one case only:
 `--skip-gate` is logged by the dispatcher; it does not
 silently bypass any kernel logic. Use it sparingly.
 
-The previous operator-decision docs (the pre-plan-013
+The previous operator-decision docs (the pre-@ADR-0011
 framing) described a wider use of `--skip-gate` — that
 framing is now historical context (§5 below) and should
 not be followed. The new framing is: **the model decides;
@@ -150,7 +150,7 @@ the supervisor waits; the operator observes.**
 
 ## §4 — Cross-repo ask (now superseded by `@ADR-0011`)
 
-The pre-plan-013 framing asked math to ship
+The pre-@ADR-0011 framing asked math to ship
 `mathlint architect-review --verdict --program <name>` so
 the dispatcher could parse the verdict programmatically
 without parsing roadmap output. That ask was
@@ -165,7 +165,7 @@ math-side implementation lands in math; the source-side
 translator lands in research-institution; no kernel CLI
 change is required.
 
-The pre-plan-013 `@ADR-0007` (cross-repo) ADR is retained
+The pre-@ADR-0011 `@ADR-0007` (cross-repo) ADR is retained
 as historical context; the **operator-UX ask** it described
 is satisfied differently by `@ADR-0011`.
 
@@ -238,7 +238,7 @@ These docs were updated in PR-A:
 ## §7 — Cross-references
 
 - `@ADR-0011-stagnation-handling-is-a-source-decision` —
-  the durable cross-repo ADR; supersedes the pre-plan-013
+  the durable cross-repo ADR; supersedes the pre-@ADR-0011
   `@ADR-0007-mathlint-architect-review-program-flag`.
 - `@INV-0094-no-delta-loop-is-broken-by-source-side-stagnation-consult` —
   the durable invariant anchoring the fix.

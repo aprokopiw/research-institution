@@ -49,7 +49,7 @@ HAS_COV = {
 CLAIMS = [
     (
         "CLAIM-1",
-        "Plan-013 wire schema byte-identical to pre-plan-013 (DecisionKind / RoleName / reason-code set / envelope data-class shape)",
+        "@ADR-0011 wire schema byte-identical to pre-@ADR-0011 (DecisionKind / RoleName / reason-code set / envelope data-class shape)",
         ["research-institution/tests/test_wire_schema_unchanged.py"],
     ),
     (

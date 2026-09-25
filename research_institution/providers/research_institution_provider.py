@@ -332,7 +332,7 @@ def select_next_work_for_supervisor(repository: Path) -> Dispatch | Wait:
          ``role`` is overridden via ``dataclasses.replace(...)`` to
          one of pi_monitor's existing 8 ``RoleName`` values
          (``research`` / ``maintenance`` / ...) so the wire schema
-         is byte-identical to pre-plan-013.
+         is byte-identical to pre-@ADR-0011.
       9. **Failure modes:** If the repository is not a mathlint
          project (``MathProject.load`` raises), the OS falls back to
          existing dispatch behavior (steps 4–5). If the consult raises

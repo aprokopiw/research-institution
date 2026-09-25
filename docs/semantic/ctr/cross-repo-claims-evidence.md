@@ -44,7 +44,7 @@ Exit code `0` if 8/8 pass; `1` otherwise.
 
 | ID | Claim | Tier | Evidence files | Status 2026-09-23 |
 |-----|-------|------|----------------|---------------------|
-| CLAIM-1 | Wire schema byte-identical to pre-plan-013 (`@CTR-0021`) | V2 | `research-institution/tests/test_wire_schema_unchanged.py` | PASS |
+| CLAIM-1 | Wire schema byte-identical to pre-@ADR-0011 (`@CTR-0021`) | V2 | `research-institution/tests/test_wire_schema_unchanged.py` | PASS |
 | CLAIM-2 | pi_monitor <-> math cross-repo wire round-trip | V2 | `pi_monitor/tests/test_cross_repo_wire_round_trip.py` | PASS |
 | CLAIM-3 | math `consult()` wrapper purity | V2 | `math/tests/integration/test_live_source_snapshot.py` | PASS |
 | CLAIM-4 | `compute_directive_content_hash()` byte-stability | V2 | `math/tests/integration/test_live_source_snapshot.py` | PASS |

@@ -46,6 +46,13 @@ added_at = "2026-09-24"
 expiry_spec_id = ""
 
 [[exemption]]
+glob = "/docs/README.md"
+reason = "research-institution docs index. Lists links to closure-audit / live-supervisor-authority files whose names carry transient plan identifiers by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = "10-verification-release-closure"
+
+[[exemption]]
 glob = "-closure-audit.md"
 reason = "Closure-audit file suffix. These files' job is to name the transient they are closing."
 owner = "00-verify-constitution-ratification"

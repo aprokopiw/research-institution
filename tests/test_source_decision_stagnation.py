@@ -411,7 +411,7 @@ def test_dispatched_role_always_in_wire_legal_literal(tmp_path: Path) -> None:
         for wr in envelope.work:
             assert wr.role in WIRE_LEGAL_ROLES, (
                 f"verdict={verdict} emitted wire role={wr.role!r}; "
-                "the wire RoleName Literal is byte-identical to pre-plan-013"
+                "the wire RoleName Literal is byte-identical to pre-@ADR-0011"
             )
             assert wr.role == expected_role, (
                 f"verdict={verdict} expected role={expected_role!r}; got {wr.role!r}"

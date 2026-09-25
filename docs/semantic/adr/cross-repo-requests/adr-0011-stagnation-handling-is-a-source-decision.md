@@ -45,7 +45,7 @@ and is wired through `select_next_work_for_supervisor`. The
 math-side sibling is `math/src/mathlint/orchestration/
 live_source_snapshot.py::consult` (sibling ADR
 `@ADR-0097-live-source-snapshot-consult-adapter`, status
-`proposed`). Wire shape is byte-identical to pre-plan-013;
+`proposed`). Wire shape is byte-identical to pre-@ADR-0011;
 pi_monitor is byte-identical pre/post. Closure audit:
 `docs/operations/@ADR-0011-closure-audit.md`.
 
