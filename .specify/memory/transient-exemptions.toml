@@ -393,3 +393,46 @@ owner = "02-fake-pi-consolidation"
 added_at = "2026-09-25"
 expiry_spec_id = "02-fake-pi-consolidation"
 
+# --- entry 03: kaplansky domain verification completeness ---
+# kaplansky's pre-existing transient references fall into three buckets:
+#   1. ``specs/002-canonical-research-state/`` — math AGENTS.md class
+#      #15 (legacy spec-kit / spec-NNN identifiers; source-of-truth
+#      spec files slated for retirement).
+#   2. ``docs/decoupling-history/`` — kaplansky's local mathlint-
+#      decoupling cleanup receipts + plans; the doc's job is to
+#      *name* the spec-NNN / plan-NNN it documents.
+#   3. ``.agents/skills/iterate_mathlint/SKILL.md`` + ``docs/RESUME.md`` —
+#      operator-facing cold-start docs that cite transient plan-NNN
+#      references by design (per the AGENTS.md exception-class pattern).
+# Each row carries expiry_spec_id = 03-domain-verification-completeness
+# so a follow-up tickable renames the references against durable
+# ADR/INV/CTR anchors.
+
+[[exemption]]
+glob = "/kaplansky/specs/002-canonical-research-state/"
+reason = "kaplansky legacy spec-kit / spec-NNN identifiers under specs/002-...; source-of-truth spec files slated for retirement (math AGENTS.md class #15)."
+owner = "03-domain-verification-completeness"
+added_at = "2026-09-25"
+expiry_spec_id = "03-domain-verification-completeness"
+
+[[exemption]]
+glob = "/kaplansky/docs/decoupling-history/"
+reason = "kaplansky's mathlint-decoupling cleanup receipts + plans; the docs name the spec-NNN / plan-NNN they audit by design."
+owner = "03-domain-verification-completeness"
+added_at = "2026-09-25"
+expiry_spec_id = "03-domain-verification-completeness"
+
+[[exemption]]
+glob = "/kaplansky/.agents/skills/iterate_mathlint/SKILL.md"
+reason = "kaplansky rule-naming skill file. Names the transient plan it orchestrates; deletion-coupled to its transient plan."
+owner = "03-domain-verification-completeness"
+added_at = "2026-09-25"
+expiry_spec_id = "03-domain-verification-completeness"
+
+[[exemption]]
+glob = "/kaplansky/docs/RESUME.md"
+reason = "kaplansky operator-facing cold-start doc that cites transient plan-NNN references by design."
+owner = "03-domain-verification-completeness"
+added_at = "2026-09-25"
+expiry_spec_id = "03-domain-verification-completeness"
+
