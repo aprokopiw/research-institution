@@ -107,3 +107,81 @@ reason = "Spec-Kit draft specs. By-design transient during the eleven-entry prog
 owner = "00-verify-constitution-ratification"
 added_at = "2026-09-24"
 expiry_spec_id = "10-verification-release-closure"
+
+[[exemption]]
+glob = "/scripts/check-prime-directive.sh"
+reason = "Canonical strengthened-grep script. Comments document the exact transient variants it matches (e.g. plan-013, Plan-013, PLAN_013) by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/docs/semantic/contracts/ctr-0095-prime-directive-check-script-contract.md"
+reason = "Pins the canonical strengthened regex with example variants. The contract's job is to enumerate the transient forms the grep matches."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/docs/semantic/adr/adr-0095-prime-directive-mechanical-enforcement.md"
+reason = "Anchors the cross-repo mechanical enforcement. Cites transient examples by design to document the strengthened regex's target set."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/scripts/collect-prime-directive-edits.py"
+reason = "Snippet-format collector. Mirrors the canonical regex + sanctioned-globs in source comments and the ANCHOR_MAP literal; references transient plan-NNN identifiers by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/scripts/rewrite-snippets.py"
+reason = "Snippet-format rewriter. ANCHOR_MAP and docstring cite transient plan-NNN / spec-NNN forms by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/scripts/apply-prime-directive-edits.py"
+reason = "Snippet-format applier. Docstring enumerates transient variants the strengthened regex matches by design."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/scripts/cross_repo_claims_evidence.py"
+reason = "Evidence collector for cross-repo claims. Carries 'plan-013' style identifiers in claim labels (CLAIM-1, etc.) where the label was assigned at proposal time."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = "10-verification-release-closure"
+
+[[exemption]]
+glob = "/.pi/prime-directive-violations.log"
+reason = "Append-only audit log of every transient-literal write/edit the runtime extension has blocked. The log's job is to name the literal it caught."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = ""
+
+[[exemption]]
+glob = "/scripts/cold-resume.sh"
+reason = "Cold-resume operator script. Carries transient references in operator-facing instructions that pre-date the strengthened-grep era."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = "10-verification-release-closure"
+
+[[exemption]]
+glob = "/docs/operations/launch-kaplansky-autonomously.md"
+reason = "Operator one-pager. Cites transient plan-NNN prose in the launch recipe (per the spec-kit scaffold); this row's expiry couples the prose cleanup to the release-closure entry."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = "10-verification-release-closure"
+
+[[exemption]]
+glob = "/.agents/transient/test_and_simulation_suite.md"
+reason = "Program-level transient guide (per AGENTS.md exception class). Tombstoned at the end of the eleven-entry program by entry 10."
+owner = "00-verify-constitution-ratification"
+added_at = "2026-09-25"
+expiry_spec_id = "10-verification-release-closure"
+

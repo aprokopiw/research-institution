@@ -17,14 +17,22 @@
 # for the canonical mapping of transient literals to durable
 # anchors (@ADR-NNNN, @INV-NNNN, @CTR-NNNN, @CON-NNNN).
 #
+# The script honours the canonical exemption registry at
+# .specify/memory/transient-exemptions.toml — every [[exemption]].glob
+# row is appended to the in-script SANCTIONED_GLOBS list. Sibling
+# repos inherit the same list because they symlink to this
+# canonical script and their own (or the research-institution)
+# registry is auto-discovered relative to the script's location.
+#
 # Usage:
 #   bash scripts/check-prime-directive.sh                # scan repo
 #   bash scripts/check-prime-directive.sh <path>...      # scan paths
 #   bash scripts/check-prime-directive.sh --enforce      # exit 1 on hit
+#   bash scripts/check-prime-directive.sh --selftest     # identity report
 #   bash scripts/check-prime-directive.sh --help
 #
 # Exit codes:
-#   0   clean
+#   0   clean (or self-test ok)
 #   1   hit (only meaningful in --enforce mode)
 #   78  usage error
 
@@ -49,6 +57,8 @@ SANCTIONED_GLOBS=(
     "/__pycache__/"
     "/.git/"
     "/.specify/specs/"
+    "/.specify/memory/transient-exemptions.toml"
+    "/.specify/memory/constitution-verify.md"
 )
 
 usage() {
@@ -62,12 +72,92 @@ Usage:
 Options:
   --enforce     exit 1 on any unsanctioned hit (default: print only)
   --quiet       print only the count and exit code
+  --selftest    emit a deterministic identity report + exit 0
   --help        show this message
 
 When invoked without explicit paths, the script scans the
 current working directory recursively. Files matching any
 sanctioned glob are skipped.
 USAGE
+}
+
+# Locate the canonical exemption registry by walking up from
+# this script's location until we find a `.specify/memory/transient-exemptions.toml`.
+# Sibling repos (math, pi_monitor, kaplansky) symlink to this
+# canonical script, so the registry is always the research-institution
+# one. The fall-back when no registry is reachable is the
+# in-script SANCTIONED_GLOBS list below.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+find_registry() {
+    local d="${SCRIPT_DIR}"
+    while [[ "${d}" != "/" ]]; do
+        if [[ -f "${d}/.specify/memory/transient-exemptions.toml" ]]; then
+            printf '%s\n' "${d}/.specify/memory/transient-exemptions.toml"
+            return 0
+        fi
+        d="$(dirname "${d}")"
+    done
+    return 1
+}
+
+# Parse a transient-exemptions.toml into shell-quoted globs.
+# Each `[[exemption]]` table contributes one row; we read only
+# the `glob = "..."` field and let the in-script list below
+# remain the hard fallback. Comments and other fields are ignored.
+parse_registry_globs() {
+    local reg="$1"
+    python3 - "$reg" <<'PYEOF' 2>/dev/null
+import sys, re
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except OSError:
+    sys.exit(0)
+for m in re.finditer(r'^\s*glob\s*=\s*"([^"]+)"', text, re.MULTILINE):
+    sys.stdout.write(m.group(1) + "\n")
+PYEOF
+}
+
+# Build the effective SANCTIONED_GLOBS: in-script defaults first,
+# then any registry globs appended. De-duplicate while preserving
+# order so the --selftest report is deterministic.
+EFFECTIVE_GLOBS=()
+_seen=""
+_add_glob() {
+    local g="$1"
+    case " ${_seen} " in
+        *" ${g} "*) return 0 ;;
+    esac
+    EFFECTIVE_GLOBS+=("${g}")
+    _seen="${_seen} ${g}"
+}
+for g in "${SANCTIONED_GLOBS[@]}"; do _add_glob "${g}"; done
+REG_PATH="$(find_registry || true)"
+if [[ -n "${REG_PATH}" && -r "${REG_PATH}" ]]; then
+    while IFS= read -r g; do
+        [[ -n "${g}" ]] && _add_glob "${g}"
+    done < <(parse_registry_globs "${REG_PATH}")
+fi
+
+selftest() {
+    local present=0
+    printf 'self-test ok: canonical grep present'
+    if [[ "${PATTERN}" == '(\b[Pp][Ll][Aa][Nn]|\b[Ss][Pp][Ee][Cc])[-_ ]?[0-9]{2,}' ]]; then
+        present=1
+    fi
+    if [[ "${present}" -ne 1 ]]; then
+        printf ' FAIL\n' >&2
+        exit 1
+    fi
+    printf ', sanctioned-globs recognised:'
+    local IFS=','
+    printf ' %s' "${EFFECTIVE_GLOBS[@]}"
+    printf '\npass\n'
+    if [[ -n "${REG_PATH}" ]]; then
+        printf 'registry: %s\n' "${REG_PATH}"
+    else
+        printf 'registry: (none reachable; in-script defaults only)\n'
+    fi
+    exit 0
 }
 
 ENFORCE=0
@@ -77,6 +167,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --enforce) ENFORCE=1; shift ;;
         --quiet) QUIET=1; shift ;;
+        --selftest) selftest ;;
         --help|-h) usage; exit 0 ;;
         --) shift; PATHS+=("$@"); break ;;
         -*) printf 'unknown option: %s\n' "$1" >&2; usage; exit 78 ;;
@@ -91,7 +182,7 @@ fi
 is_sanctioned() {
     local abs="$1"
     local g
-    for g in "${SANCTIONED_GLOBS[@]}"; do
+    for g in "${EFFECTIVE_GLOBS[@]}"; do
         [[ "${abs}" == *"${g}"* ]] && return 0
     done
     return 1

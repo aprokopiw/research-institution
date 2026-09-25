@@ -43,6 +43,9 @@ says "to read `@ADR-0091`, look at `math/docs/semantic/adr/...`".
 | `@CTR-0100` | `research-institution/docs/semantic/contracts/` | live-source snapshot — math-side consult adapter for source-decision flow |
 | `@INV-0093` | `research-institution/docs/semantic/invariants/` | institution green gate is canonical wiring evidence |
 | `@INV-0094` | `research-institution/docs/semantic/invariants/` | no-delta loop is broken by source-side stagnation consult, not by supervisor-side circuit |
+| `@ADR-0095` | `research-institution/docs/semantic/adr/` | prime-directive mechanical enforcement is a single canonical script with byte-equal cross-repo invocation |
+| `@INV-0095` | `research-institution/docs/semantic/invariants/` | prime-directive durable anchors are owned by research-institution; siblings cite by reference |
+| `@CTR-0095` | `research-institution/docs/semantic/contracts/` | prime-directive check-script contract — regex, sanctioned-globs, exit codes, selftest |
 
 Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 
@@ -109,3 +112,7 @@ revisit.
   durable vs transient classification.
 - `pi_monitor/AGENTS.md` — pi-monitor's prime-directive
   equivalent.
+- `.specify/memory/constitution-verify.md` — the canonical
+  verify-constitution (introduced 2026-09-25 by spec
+  `00-verify-constitution-ratification`); ratified durable
+  anchors referenced from this registry.
