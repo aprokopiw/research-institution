@@ -124,6 +124,37 @@ A fresh agent session receiving the cold prompt
    If RED, the gate output names the failing stage; the doc
    above lists each common failure mode and its fix.
 
+## Autonomous cycle cold-start
+
+A fresh agent session receiving the cold prompt
+`Run @autonomous_spec_kit_cycle_orient` should:
+
+1. Read this `AGENTS.md` (the prime directive).
+2. Read `README.md` (the repo's role in the institution).
+3. Read `catalog/programs.toml` (the in-flight programs).
+4. Read `.specify/specs/*/spec.md` (the eleven-entry program
+   in lex order). The cycle adapter walks these in lex
+   order; the agent's job is to drive the worker toward the
+   first unsatisfied entry and tick its tasks.
+5. Run `bash scripts/spec-kit-cycle.sh --dry-run` to confirm
+   the cycle adapter (`pi_monitor.work.sources.SpecKitCycleSource`)
+   is importable and the META validator parses every entry.
+6. If dry-run is clean, run `bash scripts/spec-kit-cycle.sh`
+   (no `--dry-run`) to launch the supervised worker. The
+   worker iterates entries 00 through 10 in lex order and
+   emits `Wait(frontier_exhausted)` only when every entry's
+   META.md + attestation JSON close the gate.
+
+The cycle is closed-form: the supervisor owns the next-entry
+pick, the agent's job is to implement the current entry's
+Spec-Kit tasks until the audit-close-out milestone runs.
+When the agent emits an attestation JSON (entry 09 deliverable),
+the cycle's gate flips the entry to DONE; the next
+observation picks the next unsatisfied entry.
+
+The cycle stops when every entry is DONE. The supervisor then
+emits `STOP` (existing authority) and the worker halts.
+
 ## Cross-references
 
 - `~/Documents/andrei/math/AGENTS.md` — math-engine's

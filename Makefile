@@ -45,6 +45,14 @@ test:
 check-prime-directive:
 	bash scripts/check-prime-directive.sh
 
+# check-prime-directive-enforced runs the strengthened grep with
+# --enforce so the CI gate fails on any unsanctioned hit. Pairs
+# with the per-entry attestation audit + stale-rejection rules
+# described in entry 09-prime-directive-mechanical-enforcement
+# (spec-kit draft at .specify/specs/09-…/spec.md).
+check-prime-directive-enforced:
+	bash scripts/check-prime-directive.sh --enforce
+
 collect-prime-directive:
 	@python3 scripts/collect-prime-directive-edits.py /tmp/prime-directive-snippets.txt
 	@echo "edit /tmp/prime-directive-snippets.txt then run: make apply-prime-directive"
