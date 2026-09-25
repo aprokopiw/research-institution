@@ -116,13 +116,19 @@ if ! python -c "from pi_monitor.work.sources import SpecKitCycleSource; print(Sp
 fi
 
 # Cycle the META validator against every entry so a draft template
-# does not silently slip through the cycle's audit gate.
+# does not silently slip through the cycle's audit gate. Use the
+# default (draft-friendly) mode: PENDING sentinels are legal because
+# M1-M5 of every entry fills completion_sha and gate_report_digest;
+# the audit-close-out gate is the strict check.
 log "validating every META.md under .specify/specs/"
-python scripts/META_validator.py --strict --recursive .
+if [[ "${STRICT_META:-0}" -eq 1 ]]; then
+    python scripts/META_validator.py --strict --recursive .
+else
+    python scripts/META_validator.py --recursive .
+fi
 rc=$?
 if [[ $rc -ne 0 ]]; then
-    log "META validation failed (rc=${rc}); entry templates must be PENDING-free in --strict"
-    log "either fill the templates in now, or re-run without --strict to allow drafts"
+    log "META validation failed (rc=${rc})"
     exit "${rc}"
 fi
 
