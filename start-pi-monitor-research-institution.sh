@@ -60,6 +60,34 @@ start_resume() {
     log "cycle launched"
 }
 
+start_fresh() {
+    # Drop persisted session so the supervisor mints a new worker session
+    # instead of resuming the wedged one. INV-022: only safe when supervisor
+    # is stopped and no worker is alive.
+    if [[ ! -f "${STATE_JSON}" ]]; then
+        log "no state file at ${STATE_JSON}; nothing to clear"
+    else
+        python3 - "${STATE_JSON}" <<'PY'
+import json, sys
+p = sys.argv[1]
+s = json.load(open(p))
+for k in ("last_stats_session_id", "worker_session_id", "worker_session_file",
+          "worker_session_sha256", "execution_active_key", "execution_record_status",
+          "execution_attempt_status", "execution_outcome", "execution_outcome_digest",
+          "execution_outcome_unix", "source_wait_fingerprint",
+          "source_last_revision_label"):
+    if k in s:
+        s[k] = "" if k.endswith(("_id", "_file", "_label", "_key", "_status", "_digest", "_reason", "_fingerprint")) else 0
+s["execution_attempt_ordinal"] = 0
+s["execution_result_acknowledged"] = False
+s["execution_result_reported"] = False
+json.dump(s, open(p, "w"), indent=2)
+PY
+        log "session cleared"
+    fi
+    start_resume
+}
+
 # Parse args. Forward unknown verbs to pi-monitor CLI as a courtesy.
 ACTION="${1:-}"
 case "${ACTION}" in
@@ -70,6 +98,11 @@ case "${ACTION}" in
     --restart)
         stop_all
         start_resume
+        exit 0
+        ;;
+    --restart-fresh|--restart --fresh)
+        stop_all
+        start_fresh
         exit 0
         ;;
     --status)
