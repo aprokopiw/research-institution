@@ -100,7 +100,7 @@ case "${ACTION}" in
         start_resume
         exit 0
         ;;
-    --restart-fresh|--restart --fresh)
+    --restart-fresh|--restart-fresh)
         stop_all
         start_fresh
         exit 0
