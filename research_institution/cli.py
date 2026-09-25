@@ -875,8 +875,28 @@ def verify_simulation(
         "--baseline-subprocess-count",
         help="Baseline subprocess count for the resource oracle.",
     ),
+    macos_isolated_label: str | None = typer.Option(
+        None,
+        "--macos-isolated-label",
+        help="macOS deployment tier: unique launchctl label.",
+    ),
+    live: bool = typer.Option(
+        False,
+        "--live",
+        help="Provider-canary tier: opt-in to actually run the LIVE canary.",
+    ),
+    hours: float | None = typer.Option(
+        None,
+        "--hours",
+        help="Soak tier: duration in hours (required).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Deployment tier: render ProgramArguments without spawning.",
+    ),
 ) -> None:
-    """Run the verify-simulation harness (entry 06)."""
+    """Run the verify-simulation harness (entry 06 + 07)."""
     argv: list[str] = ["--tier", tier]
     if scenario is not None:
         argv.extend(["--scenario", scenario])
@@ -884,6 +904,14 @@ def verify_simulation(
         argv.append("--json")
     if baseline_subprocess_count:
         argv.extend(["--baseline-subprocess-count", str(baseline_subprocess_count)])
+    if macos_isolated_label is not None:
+        argv.extend(["--macos-isolated-label", macos_isolated_label])
+    if live:
+        argv.append("--live")
+    if hours is not None:
+        argv.extend(["--hours", str(hours)])
+    if dry_run:
+        argv.append("--dry-run")
     rc = verify_simulation_main(argv)
     raise typer.Exit(code=rc)
 

@@ -30,6 +30,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from research_institution.gates.verify_simulation.runner import (
     report_to_dict,
@@ -60,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="research_institution verify-simulation",
         description=(
             "Entry 06 composed autonomous simulation harness. "
-            "Runs the 14 canonical scenarios + five oracles."
+            "Runs the 14 canonical scenarios + five oracles. "
+            "Entry 07 adds deployment / provider-canary / soak tiers."
         ),
     )
     parser.add_argument(
@@ -91,6 +93,40 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Baseline subprocess count for the resource oracle.",
     )
+    parser.add_argument(
+        "--macos-isolated-label",
+        default=None,
+        help=(
+            "macOS deployment tier: unique launchctl label. "
+            "Required when --tier deployment runs on Darwin."
+        ),
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "Provider-canary tier: opt-in flag to actually run "
+            "the LIVE canary. Without this flag, --tier provider-canary "
+            "exits 2 with an actionable error."
+        ),
+    )
+    parser.add_argument(
+        "--hours",
+        type=float,
+        default=None,
+        help=(
+            "Soak tier: duration in hours. Required when --tier soak; "
+            "missing --hours exits 2 with an actionable error."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Deployment tier: render ProgramArguments and return "
+            "without spawning subprocesses."
+        ),
+    )
     return parser
 
 
@@ -117,6 +153,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point. Returns the gate-status exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.tier == "deployment":
+        return _run_deployment_tier(args)
+    if args.tier == "provider-canary":
+        return _run_provider_canary_tier(args)
+    if args.tier == "soak":
+        return _run_soak_tier(args)
     if args.scenario is not None:
         try:
             scenarios = [scenario_lookup(args.scenario)]
@@ -142,6 +184,151 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{r.scenario_name}: {r.verdict} ({r.elapsed_seconds:.2f}s)")
     failed = [r for r in reports if r.verdict != "PASS"]
     return 1 if failed else 0
+
+
+def _run_deployment_tier(args: argparse.Namespace) -> int:
+    """Entry 07 M1: deployment tier."""
+    from research_institution.gates.verify_simulation.deployment import (
+        DeploymentRunner,
+    )
+
+    repo_root = _resolve_repo_root()
+    runner = DeploymentRunner(
+        repo_root=repo_root,
+        macos_isolated_label=args.macos_isolated_label,
+    )
+    if args.dry_run:
+        report = runner.run_dry()
+    else:
+        report = runner.run_live()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "cwds_tested": list(report.cwds_tested),
+                    "cwds_passed": list(report.cwds_passed),
+                    "cwds_failed": list(report.cwds_failed),
+                    "rendered_argv": list(report.rendered_argv),
+                    "macos_isolated_label": report.macos_isolated_label,
+                    "plist_path": str(report.plist_path)
+                    if report.plist_path
+                    else None,
+                    "detail": report.detail,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(
+            f"deployment: {report.verdict} "
+            f"({len(report.cwds_passed)}/{len(report.cwds_tested)} cwds pass)"
+        )
+        if report.detail:
+            print(f"  detail: {report.detail}")
+    return 0 if report.verdict in ("PASS", "BLOCKED") else 1
+
+
+def _run_provider_canary_tier(args: argparse.Namespace) -> int:
+    """Entry 07 M2: provider-canary tier."""
+    if not args.live:
+        print(
+            "provider-canary requires --live; refusing without it",
+            file=sys.stderr,
+        )
+        return 2
+    from research_institution.gates.verify_simulation.canary import CanaryRunner
+
+    runner = CanaryRunner(
+        scenario=args.scenario or "rate-defer-restart",
+        live=True,
+    )
+    report = runner.run()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "scenario": report.scenario,
+                    "has_model_route": report.has_model_route,
+                    "has_auth_json": report.has_auth_json,
+                    "auth_json_fingerprint": report.auth_json_fingerprint,
+                    "kaplansky_roadmap_before_sha": report.kaplansky_roadmap_before_sha,
+                    "kaplansky_roadmap_after_sha": report.kaplansky_roadmap_after_sha,
+                    "detail": report.detail,
+                    "elapsed_seconds": report.elapsed_seconds,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"canary: {report.verdict} ({report.detail})")
+    return 0 if report.verdict == "CANARY_PASS" else (78 if report.verdict == "CANARY_BLOCKED" else 1)
+
+
+def _run_soak_tier(args: argparse.Namespace) -> int:
+    """Entry 07 M3: soak tier."""
+    if args.hours is None:
+        print("soak requires --hours N; refusing without it", file=sys.stderr)
+        return 2
+    from research_institution.gates.verify_simulation.oracle.soak import (
+        SoakOracle,
+        write_evidence_archive,
+    )
+
+    oracle = SoakOracle(duration_seconds=args.hours * 3600)
+    report = oracle.run()
+    evidence_path = Path("/tmp") / f"soak-archive-{int(report.elapsed_seconds)}.json"
+    write_evidence_archive(
+        evidence_path,
+        report=report,
+        commit_sha="entry-07-m3",
+        config_fingerprint="verify-simulation/soak.v1",
+        scenario_hashes={},
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": report.verdict,
+                    "elapsed_seconds": report.elapsed_seconds,
+                    "sample_count": report.sample_count,
+                    "max_memory_mb": report.max_memory_mb,
+                    "max_process_count": report.max_process_count,
+                    "max_state_file_bytes": report.max_state_file_bytes,
+                    "audit_chain_ok": report.audit_chain_ok,
+                    "hot_loop_detected": report.hot_loop_detected,
+                    "orphan_processes": report.orphan_processes,
+                    "duplicate_reports": report.duplicate_reports,
+                    "detail": report.detail,
+                    "evidence_archive": str(evidence_path),
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(
+            f"soak: {report.verdict} ({report.elapsed_seconds:.1f}s, "
+            f"{report.sample_count} samples)"
+        )
+    return 0 if report.verdict == "PASS" else 1
+
+
+def _resolve_repo_root() -> Path:
+    """Locate the research-institution repo root.
+
+    Used by the deployment tier to anchor the rendered
+    ProgramArguments. Walks up from this file to find the
+    ``pyproject.toml`` of the research-institution package.
+    """
+    here = Path(__file__).resolve()
+    for ancestor in [here, *here.parents]:
+        if (ancestor / "pyproject.toml").exists() and (
+            ancestor / "research_institution"
+        ).is_dir():
+            return ancestor
+    # Fallback: cwd.
+    return Path.cwd()
 
 
 if __name__ == "__main__":
