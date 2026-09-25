@@ -436,3 +436,16 @@ owner = "03-domain-verification-completeness"
 added_at = "2026-09-25"
 expiry_spec_id = "03-domain-verification-completeness"
 
+
+# --- entry 05: supervisor process and fault simulation substrate ---
+# pi_monitor's tests/substrate/ package is new with entry 05. The
+# substrate helpers reference their origin in transient spec-NNN
+# docstrings; renaming is a mechanical rewrite task that a follow-up
+# tickable performs against durable anchors.
+
+[[exemption]]
+glob = "/pi_monitor/tests/substrate/"
+reason = "entry 05 substrate helpers carry transient spec-NNN references in docstrings; follow-up tickable rewrites against durable anchors."
+owner = "05-process-fault-simulation"
+added_at = "2026-09-25"
+expiry_spec_id = "05-process-fault-simulation"
