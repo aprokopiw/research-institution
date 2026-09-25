@@ -221,6 +221,11 @@ domain meaning, monitor owns execution).
   named critical mutant from §12 of the test-and-simulation guide.
   Surviving critical mutant = release-blocking `FAIL`.
 
+**Linked durable anchors:** pi_monitor `@ADR-0005` (audit
+append-only hash-chained); `@INV-0093` (institution green gate is
+canonical wiring evidence); `@INV-0094` (no-delta loop is
+source-side); `@CTR-0094` (work-source provider dispatch envelope).
+
 ---
 
 ## §5. Action matrix is the canonical "what gate runs when"
@@ -491,6 +496,10 @@ explicitly unblocks (or holds) the next dependent spec.
   `research-institution/.specify/specs/`. Lifting a spec to a sibling
   repo is **forbidden**; the single mount point IS the program
   contract.
+
+**Linked durable anchors:** `@INV-0093` (institution green gate is
+canonical wiring evidence); `@INV-0094` (no-delta loop is source-side);
+`@CTR-0094` (work-source provider dispatch envelope).
 
 ---
 

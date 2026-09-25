@@ -62,9 +62,14 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 | Anchor | Lives in | Title (abridged) |
 |--------|----------|------------------|
 | `@ADR-0014` | `math/docs/semantic/adr/` | mathlint does not import program-named modules |
+| `@ADR-0088` | `math/docs/semantic/adr/` | self-test fixture classification (sample fixture is a fixture, not a proof program) |
+| `@ADR-0089` | `math/docs/semantic/adr/` | self-test fixture as canonical CI fixture |
 | `@ADR-0091` | `math/docs/semantic/adr/` | mathlint does not ship program-specific launchers |
 | `@ADR-0097` | `math/docs/semantic/adr/` | live source snapshot — consult adapter exposing the kernel to the live source-decision flow (@ADR-0011 sibling) |
+| `@CTR-0020` | `math/docs/semantic/contracts/` | three-repo autonomy wire contract |
+| `@CTR-0085` | `math/docs/semantic/contracts/` | sample-program dispatch envelope shape |
 | `@INV-0006` | `math/docs/semantic/invariants/` | deterministic registry and typed effects |
+| `@INV-0088` | `math/docs/semantic/invariants/` | self-test fixture requires no external state |
 | `@INV-0093` | `math/docs/semantic/invariants/` | (math; superset of institution's INV-0093) |
 
 ### Pi-monitor anchors (most-cited)
