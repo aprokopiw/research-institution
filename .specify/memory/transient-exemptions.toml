@@ -449,3 +449,17 @@ reason = "entry 05 substrate helpers carry transient spec-NNN references in docs
 owner = "05-process-fault-simulation"
 added_at = "2026-09-25"
 expiry_spec_id = "05-process-fault-simulation"
+
+# --- entry 06: composed autonomous simulation ---
+# research-institution's gates/verify_simulation/ package is new
+# with entry 06. The verify-simulation harness is referenced in
+# transient spec-NNN / plan-NNN docstrings where they explain
+# their origin; renaming is a mechanical rewrite task that a
+# follow-up tickable performs.
+
+[[exemption]]
+glob = "/research_institution/gates/verify_simulation/"
+reason = "entry 06 verify-simulation package carries transient spec-NNN references in docstrings; follow-up tickable rewrites against durable anchors."
+owner = "06-autonomous-composed-simulation"
+added_at = "2026-09-25"
+expiry_spec_id = "06-autonomous-composed-simulation"

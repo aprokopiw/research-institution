@@ -315,17 +315,22 @@ def _v_compose_check() -> GateCheck:
     """Run the composed-test suite (Phase J.2 v-compose tier).
 
     The v-compose tier runs every COMPOSE-N test in the
-    institution's test surface and asserts they all pass
-    in <30 seconds. This is the V2 expression for the
-    cross-repo composition contracts: the COMPOSE tests
-    exercise the in-process composition seams (registry +
-    OS + wire round-trip + exception conversion) end-to-end
-    without subprocesses, network I/O, or real clocks.
+    institution's test surface AND the entry 06
+    verify-simulation hermetic tier (per FR-5 of the spec),
+    and asserts they all pass in <30 seconds. This is the
+    V2 expression for the cross-repo composition contracts:
+    the COMPOSE tests exercise the in-process composition
+    seams (registry + OS + wire round-trip + exception
+    conversion) end-to-end without subprocesses, network
+    I/O, or real clocks.
 
     The check runs the ``tests/test_compose_*.py`` files
-    in this repo. A regression in any composed seam
-    surfaces here with a clear failure pointing at the
-    broken COMPOSE-N.
+    in this repo, then invokes
+    ``python -m research_institution verify-simulation
+    --tier fast`` for the entry 06 hermetic smoke. A
+    regression in any composed seam surfaces here with a
+    clear failure pointing at the broken COMPOSE-N or
+    verify-simulation scenario.
 
     Why a separate gate stage (rather than folded into
     V1 unit tests): the COMPOSE tests exercise the full
@@ -371,18 +376,54 @@ def _v_compose_check() -> GateCheck:
             output=result.stdout + result.stderr,
             result=result,
         )
-    if result.returncode == 0:
+    if result.returncode != 0:
         return GateCheck(
             name="v-compose",
-            status=GateStatus.PASS,
-            detail=f"composed-test tier ok ({elapsed:.1f}s, {len(compose_files)} files)",
+            status=GateStatus.FAIL,
+            detail="one or more COMPOSE tests failed",
+            output=result.stdout + result.stderr,
+            result=result,
+        )
+    # Entry 06 FR-5: invoke verify-simulation hermetic tier.
+    sim_argv = (
+        python_exe,
+        "-m",
+        "research_institution",
+        "verify-simulation",
+        "--tier",
+        "fast",
+    )
+    sim_result = subprocess.run(sim_argv, capture_output=True, text=True, check=False)
+    elapsed = time.monotonic() - started
+    if elapsed > 30:
+        return GateCheck(
+            name="v-compose",
+            status=GateStatus.FAIL,
+            detail=(
+                f"composed + verify-simulation tier took {elapsed:.1f}s; "
+                f"budget 30s"
+            ),
+            output=result.stdout + result.stderr,
+            result=result,
+        )
+    if sim_result.returncode != 0:
+        return GateCheck(
+            name="v-compose",
+            status=GateStatus.FAIL,
+            detail=(
+                "verify-simulation --tier fast failed "
+                f"(rc={sim_result.returncode})"
+            ),
+            output=sim_result.stdout + sim_result.stderr,
+            result=sim_result,
         )
     return GateCheck(
         name="v-compose",
-        status=GateStatus.FAIL,
-        detail="one or more COMPOSE tests failed",
-        output=result.stdout + result.stderr,
-        result=result,
+        status=GateStatus.PASS,
+        detail=(
+            f"composed-test + verify-simulation tier ok "
+            f"({elapsed:.1f}s, {len(compose_files)} files)"
+        ),
     )
 
 

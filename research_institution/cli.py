@@ -35,6 +35,7 @@ from research_institution.contracts import (
     gate_verdict_from_task_kind,
 )
 from research_institution.prime_directive import app as prime_directive_app
+from research_institution.gates.verify_simulation.cli import main as verify_simulation_main
 from research_institution.contracts.skill_template import render_skill
 from research_institution.paths import (
     agent_skills_dir,
@@ -850,6 +851,41 @@ def install_skills() -> None:
 def main() -> None:
     app.add_typer(prime_directive_app, name="prime_directive")
     app()
+
+
+@app.command("verify-simulation")
+def verify_simulation(
+    tier: str = typer.Option(
+        "fast",
+        "--tier",
+        help="Tier selector (fast|full|process|deployment|provider-canary|soak).",
+    ),
+    scenario: str | None = typer.Option(
+        None,
+        "--scenario",
+        help="Run a single scenario by name (overrides --tier).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit JSON output instead of a human-readable summary.",
+    ),
+    baseline_subprocess_count: int = typer.Option(
+        0,
+        "--baseline-subprocess-count",
+        help="Baseline subprocess count for the resource oracle.",
+    ),
+) -> None:
+    """Run the verify-simulation harness (entry 06)."""
+    argv: list[str] = ["--tier", tier]
+    if scenario is not None:
+        argv.extend(["--scenario", scenario])
+    if json_output:
+        argv.append("--json")
+    if baseline_subprocess_count:
+        argv.extend(["--baseline-subprocess-count", str(baseline_subprocess_count)])
+    rc = verify_simulation_main(argv)
+    raise typer.Exit(code=rc)
 
 
 if __name__ == "__main__":

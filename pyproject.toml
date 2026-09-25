@@ -65,6 +65,13 @@ packages = ["research_institution"]
 # the institution is installed as a runtime dep.
 include = ["research_institution/py.typed"]
 
+# Entry point: console script for the entry 06 verify-simulation
+# harness. Per .specify/specs/06-autonomous-composed-simulation/spec.md
+# T4.2, ``python -m research_institution verify-simulation --help``
+# and ``verify-simulation --help`` (after install) MUST both work.
+[project.scripts]
+verify-simulation = "research_institution.gates.verify_simulation.cli:main"
+
 # (research_institution/ is reserved for any future Python glue
 # this repo might need. Today the repo is scripts + docs + tests
 # only; no Python package. The packages = ["research_institution"]
