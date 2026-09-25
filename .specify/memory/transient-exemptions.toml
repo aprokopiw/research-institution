@@ -490,3 +490,24 @@ reason = "entry 08 compat runners carry transient spec-NNN references in docstri
 owner = "08-installed-compatibility-recovery"
 added_at = "2026-09-25"
 expiry_spec_id = "08-installed-compatibility-recovery"
+
+# --- entry 09: prime-directive mechanical enforcement ---
+# The prime_directive package + tests/prime_directive/ are new
+# with entry 09. Docstrings carry explanatory references like
+# `entry 09 / FR-N` that the strengthened grep could match; those
+# strings are necessary for human readers and are sanitized at
+# merge time by a follow-up tickable.
+
+[[exemption]]
+glob = "/research_institution/prime_directive/"
+reason = "entry 09 prime_directive package — explanatory references to FR-N / section-N are required for human readers; sanitized at merge."
+owner = "09-prime-directive-mechanical-enforcement"
+added_at = "2026-09-25"
+expiry_spec_id = "09-prime-directive-mechanical-enforcement"
+
+[[exemption]]
+glob = "/tests/prime_directive/"
+reason = "entry 09 prime_directive tests — explanatory references to FR-N are required for human readers; sanitized at merge."
+owner = "09-prime-directive-mechanical-enforcement"
+added_at = "2026-09-25"
+expiry_spec_id = "09-prime-directive-mechanical-enforcement"

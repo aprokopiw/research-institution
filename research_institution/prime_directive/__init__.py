@@ -1,34 +1,52 @@
-"""Prime-directive CLI surface for the Spec-Kit cycle.
+"""Prime-directive CLI surface for the Spec-Kit cycle (entry 09 M1 + M2).
 
 The Spec-Kit cycle adapter (``pi_monitor.work.sources.spec_kit_cycle``)
 gates each entry's audit-close-out tickable on the presence of a
-matching ``.pi-prime-attestations/<slug>.json``. The supervised Pi
-worker emits that attestation via the subcommand exposed here
-rather than by hand-writing JSON. The attestation carries the
-canonical digest formula (``sha256(completion_sha ||
-config_fingerprint)``) so the cycle adapter can reject stale or
+matching ``.specify/specs/<slug>/.pi-prime-attestations/<slug>.json``.
+The supervised Pi worker emits that attestation via the
+subcommands exposed here; the canonical digest formula is
+``sha256(completion_sha || config_fingerprint)`` (v2 form per
+the e2178ab fix) so the cycle adapter can reject stale or
 tampered attestations on every observation.
 
-Design notes:
-  - The subcommand is intentionally minimal. It is a thin wrapper
-    over ``scripts/emit-attestation.py`` so the script's behavior
-    is reachable from both the operator shell and the supervised
-    worker.
-  - The completion SHA defaults to ``HEAD`` of the local repo; the
-    worker can override with ``--completion-sha`` when a precise
-    closing SHA matters (e.g. entry 10's release tag).
-  - Exit codes follow the gate-status algebra
-    (``constitution-verify.md`` §3): 0 PASS, 78 BLOCKED, 1 FAIL.
+The package is split into four submodules per FR-1:
+
+  * :mod:`research_institution.prime_directive.attest` —
+    ``attest(spec_id, *, completion_sha)`` + the v2 digest
+    helpers.
+  * :mod:`research_institution.prime_directive.validate` —
+    ``validate_attestation(...)`` + chain verifier.
+  * :mod:`research_institution.prime_directive.meta_validator` —
+    META.md §11.2 schema validator.
+  * :mod:`research_institution.prime_directive.extension_bridge` —
+    canonical registry renderer for the runtime extension.
+
+This ``__init__`` re-exports the public API + owns the Typer
+subcommand group (``app``).
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import typer
+
+from research_institution.prime_directive.attest import (
+    attest as _attest_module_attest,
+    compute_digest,
+    config_fingerprint,
+)
+from research_institution.prime_directive.extension_bridge import (
+    render_sanctioned_globs,
+)
+from research_institution.prime_directive.meta_validator import (
+    validate_meta,
+    validate_all_metas,
+)
+from research_institution.prime_directive.validate import (
+    validate_attestation,
+    verify_attestation_chain,
+)
 
 # Subcommand group exposed under ``python -m research_institution
 # prime_directive ...``. Each command is its own subcommand; the
@@ -72,81 +90,75 @@ def attest(
     ),
 ) -> None:
     """Emit per-entry attestation JSON for the Spec-Kit cycle."""
-    workspace = (root or _institution_root()).resolve()
-    spec_dir = workspace / ".specify" / "specs" / slug
-    if not spec_dir.is_dir():
-        typer.echo(f"spec dir does not exist: {spec_dir}", err=True)
-        raise typer.Exit(code=1)
+    payload = _attest_module_attest(
+        spec_id=slug,
+        completion_sha=completion_sha or "HEAD",
+        root=root or _institution_root(),
+        write=write,
+    )
+    import json
 
-    # Defer to the canonical helper at scripts/emit-attestation.py
-    # so the script and CLI share one implementation. We shell out
-    # rather than importing because the helper is single-file and
-    # importable only via sys.path hacks; shelling keeps the
-    # surface stable.
-    repo_root = Path(__file__).resolve().parents[2]
-    cmd = [
-        sys.executable,
-        str(repo_root / "scripts" / "emit-attestation.py"),
-        "--slug",
-        slug,
-        "--root",
-        str(workspace),
-    ]
-    if completion_sha:
-        cmd += ["--completion-sha", completion_sha]
-    if write:
-        cmd += ["--write"]
-
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    raise typer.Exit(code=proc.returncode)
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("validate")
 def validate(
     slug: str = typer.Option(..., "--slug", help="Entry slug."),
-    strict: bool = typer.Option(
-        True,
-        "--strict/--no-strict",
-        help="Reject META.md that still has PENDING placeholders.",
-    ),
     root: Path | None = typer.Option(
         None,
         "--root",
         help="Workspace root (default: institution repo root).",
     ),
 ) -> None:
-    """Validate one entry's META.md + attestation JSON."""
+    """Validate the per-entry attestation JSON for ``--slug``."""
     workspace = (root or _institution_root()).resolve()
-    repo_root = Path(__file__).resolve().parents[2]
-
-    # Validate META.
-    validator = repo_root / "scripts" / "META_validator.py"
-    cmd = [sys.executable, str(validator)]
-    if strict:
-        cmd += ["--strict"]
-    cmd += [str(workspace / ".specify" / "specs" / slug / "META.md")]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    if proc.returncode != 0:
-        raise typer.Exit(code=proc.returncode)
-
-    # Verify attestation JSON exists + digest matches.
-    attest_path = (
-        workspace
-        / ".specify"
-        / "specs"
-        / slug
-        / ".pi-prime-attestations"
-        / f"{slug}.json"
+    attestations_dir = workspace / ".specify" / "specs" / slug / ".pi-prime-attestations"
+    target = attestations_dir / f"{slug}.json"
+    if not target.exists():
+        typer.echo(f"attestation missing: {target}", err=True)
+        raise typer.Exit(code=78)
+    result = validate_attestation(target, root=workspace)
+    typer.echo(
+        f"{result.verdict}: slug={result.slug} "
+        f"completion_sha={result.completion_sha[:12]}..."
     )
-    if not attest_path.exists():
-        typer.echo(f"attestation JSON missing: {attest_path}", err=True)
-        raise typer.Exit(code=1)
+    if result.verdict == "PASS":
+        raise typer.Exit(code=0)
+    if result.verdict == "BLOCKED":
+        raise typer.Exit(code=78)
+    raise typer.Exit(code=1)
 
-    typer.echo(f"PASS {slug}: META valid, attestation present")
+
+@app.command("render-globs")
+def render_globs_cmd() -> None:
+    """Render the canonical ``SANCTIONED_PATH_PATTERNS`` shape."""
+    for glob in render_sanctioned_globs():
+        typer.echo(glob)
 
 
-__all__ = ["app", "attest", "validate"]
+@app.command("validate-meta")
+def validate_meta_cmd(
+    path: Path = typer.Argument(..., help="Path to META.md."),
+    strict: bool = typer.Option(False, "--strict", help="Reject PENDING placeholders."),
+) -> None:
+    """Validate one META.md against the §11.2 schema."""
+    result = validate_meta(path, strict_placeholders=strict)
+    typer.echo(f"{result.verdict}: {result.spec_id} ({result.detail})")
+    if result.verdict == "PASS":
+        raise typer.Exit(code=0)
+    if result.verdict == "NOT_APPLICABLE":
+        raise typer.Exit(code=78)
+    raise typer.Exit(code=1)
+
+
+__all__ = [
+    "app",
+    "attest",
+    "compute_digest",
+    "config_fingerprint",
+    "render_sanctioned_globs",
+    "validate_all_metas",
+    "validate_attestation",
+    "validate_meta",
+    "verify_attestation_chain",
+]
