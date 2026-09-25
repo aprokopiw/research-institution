@@ -3,6 +3,13 @@
 # Central registry of transient artifacts that the
 # pi-extension's strengthened regex (canonical grep at
 # scripts/check-prime-directive.sh) is allowed to skip.
+
+# Schema version. Bump on any structural change to the table
+# (new column, classification rename, etc.). Append-only edits
+# (new exemption rows) do NOT require a version bump per
+# Cannot-claim-done #12 of .specify/specs/01-test-suite-rationalization.
+schema_version = 1
+
 #
 # Per the prime-directive constitution-verify §10 (entry 09
 # durable records): every sanctioned-glob path that the runtime
@@ -191,4 +198,145 @@ reason = "Program-level transient guide (per AGENTS.md exception class). Tombsto
 owner = "00-verify-constitution-ratification"
 added_at = "2026-09-25"
 expiry_spec_id = "10-verification-release-closure"
+
+# --- entry 01: math test-suite rationalization (FR-2 + F-1..F-3) ---
+# The math repo retains legacy ambiguous-tier directories during the
+# M3 migration; their ``__init__.py`` and ``README.md`` files describe
+# the historic usage and may reference the six forbidden strings
+# (e2e | smoke | acceptance | endurance | live | chaos) as descriptive
+# prose. The static check ``tests/static/test_closed_tier_vocabulary.py``
+# accepts the grandfathered form until the M3 bounded folder
+# migrations retire each directory. Expiry couples the cleanup to
+# entry 01's audit-close-out milestone.
+
+[[exemption]]
+glob = "/math/tests/e2e/"
+reason = "Legacy ambiguous-tier directory. README + __init__ describe historic E2E usage; tests are grandfathered until M3 migrates them to process/integration tiers."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/smoke/"
+reason = "Legacy ambiguous-tier directory. README + __init__ describe historic smoke usage; directory is empty in source and slated for M3 deletion."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/acceptance/"
+reason = "Legacy ambiguous-tier directory. README + __init__ describe historic acceptance usage; non-provider tests migrate to owner-subsystem dirs in M3, provider-live cases acquire provider_live marker."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/chaos/"
+reason = "Legacy ambiguous-tier directory. README + __init__ describe historic fault-injection usage; deterministic cases migrate to owner-subsystem dirs with fault_profile metadata in M3."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/endurance/"
+reason = "Legacy ambiguous-tier directory. README + tests describe historic long-running recovery usage; the closed vocabulary (§1) replaces endurance with soak."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/live_readiness/"
+reason = "Legacy ambiguous-tier directory. README + tests describe historic provider-live readiness; live is a forbidden primary tier per §1.2 and the closed vocabulary replaces it with provider_live."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/local_readiness/"
+reason = "Legacy ambiguous-tier directory. README + tests describe local-readiness checks; live is a forbidden primary tier per §1.2 and the closed vocabulary replaces it with deployment for the residual cases."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/final_product_acceptance/"
+reason = "Legacy ambiguous-tier directory. README + scripts describe historic acceptance-tier work; the directory is preserved only while src/mathlint/final_product_acceptance/ remains a real package."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+# --- entry 01: math prime-directive grandfathering for math HEAD ---
+# Math's local AGENTS.md exception classes 11..18 enumerate the
+# math-owned files that legitimately reference transient plan-NNN /
+# spec-NNN identifiers by design (they name the transient path they
+# operate on; deleting the reference would defeat the file's
+# function). Each row here mirrors one of those classes so the
+# canonical strengthened grep is clean at math HEAD per entry 00's
+# clause 11 ("four repos report zero unsanctioned hits").
+# Expiry couples the cleanup to entry 01's audit-close-out; a
+# follow-up tickable retires each row when the underlying transient
+# artifact is deleted in math.
+
+[[exemption]]
+glob = "/math/.agents/skills/iterate_mathlint/SKILL.md"
+reason = "Math AGENTS.md plan-NNN rule-naming skill file. Names the transient plan it orchestrates; deletion-coupled to its transient plan."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/artifacts/temp/specs/"
+reason = "Math AGENTS.md class #15: legacy spec-kit / spec-NNN identifiers under artifacts/temp/specs/. Source-of-truth spec files slated for retirement."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/docs/semantic/INDEX.md"
+reason = "Math's local semantic index. Cites transient plan-NNN records by reference; deletion-coupled to the plan closures."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/scripts/_autonomy_resume.sh"
+reason = "Math AGENTS.md class #12: bash helper that defaults PLAN_DOC to a transient plan path as the affordance of the resume entry point."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/scripts/_autonomy_update_ledger.sh"
+reason = "Math AGENTS.md class #12: bash helper that defaults PLAN_DOC to a transient plan path as the affordance of the resume entry point."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/scripts/coherence/"
+reason = "Math's prime-directive coherence-checking scripts. Their job is to scan for transient-literal violations; they reference the canonical regex + plan-NNN examples by design."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/scripts/continue_all_plans.sh"
+reason = "Math's plan-orchestration helper. Names transient plan-NNN directories it iterates; deletion-coupled to each plan's ledger retirement."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/scripts/plan_gate.sh"
+reason = "Math's plan-gate helper. Names transient plan-NNN directories it gates; deletion-coupled to each plan's ledger retirement."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
+
+[[exemption]]
+glob = "/math/tests/contracts/test_iteration_persistence_no_spec_kit_refs.py"
+reason = "Test asserting no spec_kit refs. The test's job is to *name* the spec-kit identifier it bans; the test name + docstring carry the literal."
+owner = "01-test-suite-rationalization"
+added_at = "2026-09-25"
+expiry_spec_id = "01-test-suite-rationalization"
 

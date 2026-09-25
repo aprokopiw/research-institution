@@ -59,6 +59,15 @@ SANCTIONED_GLOBS=(
     "/.specify/specs/"
     "/.specify/memory/transient-exemptions.toml"
     "/.specify/memory/constitution-verify.md"
+    # Generated content caches. Every Python repo's .gitignore
+    # excludes these; they are never durable source. Entry 01
+    # added the rows here so the canonical grep is clean at
+    # all four repos without per-repo amendment.
+    "/.pytest_cache/"
+    "/.ruff_cache/"
+    "/.hypothesis/"
+    "/.mypy_cache/"
+    "/.coverage"
 )
 
 usage() {
