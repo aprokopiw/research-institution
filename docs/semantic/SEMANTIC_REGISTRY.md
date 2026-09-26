@@ -41,6 +41,7 @@ says "to read `@ADR-0091`, look at `math/docs/semantic/adr/...`".
 | `@CTR-0088` | `research-institution/docs/semantic/contracts/` | catalog schema contract |
 | `@CTR-0094` | `research-institution/docs/semantic/contracts/` | work-source provider dispatch envelope |
 | `@CTR-0100` | `research-institution/docs/semantic/contracts/` | live-source snapshot — math-side consult adapter for source-decision flow |
+| `@CTR-0101` | `research-institution/docs/semantic/contracts/` | release-gate contract — typed ReleaseReport schema, seven canonical rows, gate-report digest |
 | `@INV-0093` | `research-institution/docs/semantic/invariants/` | institution green gate is canonical wiring evidence |
 | `@INV-0094` | `research-institution/docs/semantic/invariants/` | no-delta loop is broken by source-side stagnation consult, not by supervisor-side circuit |
 | `@ADR-0095` | `research-institution/docs/semantic/adr/` | prime-directive mechanical enforcement is a single canonical script with byte-equal cross-repo invocation |
