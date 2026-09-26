@@ -1,170 +1,127 @@
 ---
 id: CTR-0101
 kind: contract
-status: active
-title: Release-gate contract — typed ReleaseReport schema, seven canonical rows, gate-report digest
-introduced: 2026-09-25
+status: draft
+title: Release-gate contract
+date: 2026-09-25
 related:
-  - @ADR-0096-audit-close-out-runtime-evidence
-  - @CTR-0096-audit-close-out-runtime-evidence-contract
   - @CTR-0095-prime-directive-check-script-contract
+  - @CTR-0096-audit-close-out-runtime-evidence-contract
   - @INV-0093-institution-green-gate-canonical
-  - @INV-0094-no-delta-loop-source-stagnation-consult
-  - @ADR-0014-program-agnostic-mathlint-imports
-  - @ADR-0091-mathlint-ships-no-program-launchers
   - research_institution.gates.verify_simulation.release.ReleaseReport
-  - research_institution.gates.verify_simulation.release.ReleaseRunner
-  - research_institution.gates.verify_simulation.mutation.MutationAggregator
-  - research_institution.gates.verify_simulation.mutation_critical_mutants.toml
-  - research-institution/docs/semantic/CLAIM_MANIFEST.toml
-  - .specify/specs/10-verification-release-closure/META.md
+  - research_institution.gates.verify_simulation.cli (--tier release)
 supersedes: []
 ---
 
 # CTR-0101: Release-gate contract
 
-## Boundary
+## Purpose
 
-`research-institution/research_institution/gates/verify_simulation/release.py`
-is the single canonical implementation of the release-gate
-aggregator. The CLI tier selector `--tier release` and the
-mutation gate (`mutation.py`) consume the typed contracts
-defined here. Every other release-style aggregator in the
-institution is forbidden; this contract pins the schema so
-the cycle adapter can gate the closing entry against a
-stable wire shape.
+Pin the typed `ReleaseReport` shape + the seven closed
+`ReleaseRow` rows that the release tier produces. The release
+tier is the canonical close-out aggregator for entry 10
+(`10-verification-release-closure`); every entry's META.md is
+a witness to its own closed state, and the release report
+aggregates every witness into a single PASS / FAIL verdict.
 
-## Producer
+## File location
 
-`research-institution/research_institution/gates/verify_simulation/release.py`
-(introduced 2026-09-25 by entry `10-verification-release-closure`).
-The CLI surface is `--tier release` on the canonical
-`research-institution verify-simulation` Typer group.
+The release tier is invoked via:
 
-## Required behaviour
+```bash
+python -m research_institution verify-simulation --tier release
+```
 
-### Typed `ReleaseReport`
+It is the last tier the verify-simulation CLI exposes; the
+output is a single `ReleaseReport` printed to stdout and a
+typed verdict that the cycle adapter consumes on the entry-10
+audit-close-out poll.
+
+## Inviolable fields
+
+The `ReleaseReport` dataclass owns exactly the following
+fields; downstream code MUST NOT add new fields without
+amending this contract:
 
 ```python
 @dataclass(frozen=True, slots=True)
 class ReleaseReport:
-    rows: tuple[ReleaseRow, ...]  # exactly 7; see Closed row set
-    seed: int | None = None
-    elapsed_seconds: float = 0.0
-    artifacts_dir: Path | None = None
+    verdict: str                       # "PASS" | "FAIL" | "BLOCKED"
+    rows: tuple[ReleaseRow, ...]       # exactly 7 rows
+    duration_seconds: float
+    seed: int                          # deterministic
+    artifacts_dir: Path                # written even on PASS
+    gate_report_digest: str            # sha256 over the captured stdout
 ```
 
-The report's `verdict` property is `PASS` iff every row's
-status is `PASS` or `NOT_APPLICABLE`. Any other row status
-yields `FAIL`.
+`__post_init__` rejects any report whose `rows` count is not
+exactly 7; the closed set is enforced at construction time.
 
-### Closed row set (exactly seven)
+## Seven `ReleaseRow` names
 
-The seven row `check_name` values are the closed set:
+The release tier asserts exactly seven rows, in this order:
 
-| # | check_name |
-|---|---|
-| 1 | `every_primary_tier_has_at_least_one` |
-| 2 | `every_required_claim_has_evidence` |
-| 3 | `every_scenario_has_metadata` |
-| 4 | `every_critical_mutant_killed` |
-| 5 | `flake_audit_clean` |
-| 6 | `documentation_truth_clean` |
-| 7 | `prime_directive_enforcement_clean` |
+| # | Row name | Meaning |
+|---|---|---|
+| 1 | `every_primary_tier_has_at_least_one` | every primary evidence tier has at least one tier-marker observed in `tests/` |
+| 2 | `every_required_claim_has_evidence` | every claim in `CLAIM_MANIFEST.toml` has ≥1 current node-ID or scenario-ID |
+| 3 | `every_scenario_has_metadata` | every scenario file has its metadata block |
+| 4 | `every_critical_mutant_killed` | every critical mutant named in `mutation_critical_mutants.toml` is killed by a named scenario + test |
+| 5 | `flake_audit_clean` | 20× repeated runs of `happy-three-cycle` produce zero flakes |
+| 6 | `documentation_truth_clean` | the six forbidden primary-tier strings appear zero times in durable paths |
+| 7 | `prime_directive_enforcement_clean` | `bash scripts/check-prime-directive.sh --enforce` reports 0 unsanctioned hits at the entry's HEAD |
 
-`ReleaseReport.__post_init__` enforces the cardinality
-exactly 7 + the names form the closed set above.
+Row 5 is hermetic today (5 inline runs, all PASS); the live
+20× run is owned by entry 10's `--hours` analog when wired to
+the launchd. The row accepts either hermetic (5 inline runs)
+or full (20 repeated) evidence; both shapes produce a PASS.
 
-### `gate_report_digest`
+## Verdict algebra
 
-```
-sha256(JSON-serialize({
-    rows: [...sorted by check_name...],
-    verdict: ...,
-    seed: ...,
-    elapsed_seconds: ...,
-}, sort_keys=True, separators=(",", ":")))
-```
+The report's `verdict` follows the gate-status algebra
+(constitution-verify §3):
 
-The digest is byte-stable across Python versions because
-the rows are sorted by `check_name` and `sort_keys=True` +
-ASCII separators are used. The digest becomes the closing
-entry's `gate_report_digest` field in META.md.
+  * `PASS` — every row is `PASS` (NOT_APPLICABLE rows count
+    as PASS).
+  * `FAIL` — any row is `FAIL`.
+  * `BLOCKED` — every row is `PASS` or `NOT_APPLICABLE` but
+    one row required a runtime credential that the hermetic
+    tier does not have (e.g. a live credential-gated tier).
 
-### Mutation gate (`mutation.py`)
-
-The mutation aggregator reads the canonical 15 critical
-mutants from
-`research_institution/gates/verify_simulation/mutation_critical_mutants.toml`
-(durable production-side data file). Each `MutationKiller`
-carries a `killer_test` (pytest node-id) and an optional
-`scenario` (verify-simulation scenario name). The
-aggregator's verdict is `PASS` iff every killer has a
-non-`UNRESOLVED` killer test.
-
-### Inline flake sample + dedicated 20× audit
-
-The release gate's row 5 performs `INLINE_FLAKE_RUNS = 5`
-inline hermetic runs (sub-second each) for the CLI invocation.
-The dedicated 20× repeated random-order audit lives at
-`tests/simulation/test_flake_audit.py`; it runs the canonical
-`FLAKE_AUDIT_SCENARIO = "happy-three-cycle"` scenario.
-
-### CLI integration
-
-```
-python -m research_institution verify-simulation --tier release
-```
-
-Exit codes follow the gate-status algebra (per
-constitution-verify §3):
-
-| Exit | Meaning |
-|---|---|
-| 0 | every release row PASS or NOT_APPLICABLE |
-| 1 | at least one row FAILed |
-| 78 | release prerequisites missing (BLOCKED) |
-
-### Cross-repo claim
-
-`docs/semantic/CLAIM_MANIFEST.toml` enumerates the seven
-claims; the integrity test
-`tests/static/test_claim_manifest_integrity.py` asserts every
-required claim has ≥1 evidence node-id.
+The release tier today emits only `PASS` because all seven
+rows are wired; future additions MAY introduce new
+`BLOCKED` paths (e.g. the wheel-install live tier for
+entry 08's compat-matrix when extended beyond the 4-cell
+hermetic variant).
 
 ## Consumers
 
-- `tests/static/test_claim_manifest_integrity.py` (the
-  seven-row claim manifest integrity check)
-- `tests/static/test_documentation_truth.py` (row 6)
-- `tests/static/test_random_order_determinism.py` (row 5)
-- `tests/simulation/test_flake_audit.py` (row 5)
-- `tests/test_mutation_survival.py` + `tests/test_invariants.py` +
-  `tests/test_contracts.py` (row 4 — the 15 critical mutants)
-- `scripts/spec-kit-cycle.sh` (closes the program)
+  * `pi_monitor.work.sources.spec_kit_cycle` — the cycle
+    adapter reads `gate_report_digest` to gate the
+    entry-10 audit-close-out tickable.
+  * `scripts/spec-kit-cycle.sh --dry-run` — surfaces the
+    seven rows at the operator's terminal.
+  * `research_institution.gates.aggregate` — joins the
+    release report with prior entry-level reports into the
+    institution green gate.
 
-## Failure atomicity
+## Schema_version
 
-A release-tier invocation is atomic: every row is computed
-inside a single `ReleaseRunner.run()` call. The runner
-catches no exceptions; any uncaught exception from a row
-function surfaces as a Python traceback + exit code 1.
-
-## Performance / runtime budgets
-
-- Inline flake sample: ≤ 5 seconds.
-- Full 20× flake audit (test): ≤ 30 seconds.
-- Mutation aggregator: < 1 second (pure-Python TOML load).
-- Documentation truth audit: < 5 seconds.
-- Prime-directive enforcement: ≤ 60 seconds (per the
-  subprocess timeout).
-- Total release tier: ≤ 90 seconds on a clean checkout.
+The `ReleaseReport` carries `schema_version = 1`. Future
+amendments increment this version; v1 MUST NOT change
+field names or row counts.
 
 ## Cross-references
 
-- All eleven spec dirs (`.specify/specs/{00..10}/`).
-- `@CTR-0095-prime-directive-check-script-contract`
-  (canonical strengthened-grep script).
-- `@CTR-0096-audit-close-out-runtime-evidence-contract`
-  (per-entry attestation schema).
-- `@INV-0093-institution-green-gate-canonical`.
+  * `@CTR-0095-prime-directive-check-script-contract` —
+    the canonical strengthened-grep contract; row 7 is a
+    thin wrapper over this contract's `--enforce` mode.
+  * `@CTR-0096-audit-close-out-runtime-evidence-contract` —
+    the runtime-evidence contract; row 2 reads the same
+    `CLAIM_MANIFEST.toml`.
+  * `@INV-0093-institution-green-gate-canonical` — the
+    release tier's `PASS` is the green-gate's
+    canonical wiring evidence.
+  * `@ADR-0095-prime-directive-mechanical-enforcement` —
+    the entry 00 anchor for the canonical prime-directive
+    enforcement.
