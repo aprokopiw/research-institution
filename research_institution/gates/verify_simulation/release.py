@@ -70,6 +70,7 @@ from research_institution.verification.tier_inventory import (
 )
 
 __all__ = [
+    "CANONICAL_CHECK_NAMES",
     "ReleaseReport",
     "ReleaseRow",
     "ReleaseRunner",
@@ -81,7 +82,7 @@ Status = Literal["PASS", "FAIL", "BLOCKED", "NOT_RUN", "NOT_APPLICABLE"]
 
 # The seven canonical check names per @CTR-0101. Adding a row
 # to ``ReleaseReport`` outside this set is gate FAIL.
-_CANONICAL_CHECK_NAMES: tuple[str, ...] = (
+CANONICAL_CHECK_NAMES: tuple[str, ...] = (
     "every_primary_tier_has_at_least_one",
     "every_required_claim_has_evidence",
     "every_scenario_has_metadata",
@@ -134,7 +135,7 @@ class ReleaseReport:
     """The aggregator's typed output.
 
     Exactly seven rows, one per canonical check name. Order
-    follows ``_CANONICAL_CHECK_NAMES`` so the digest is stable.
+    follows ``CANONICAL_CHECK_NAMES`` so the digest is stable.
     """
 
     rows: tuple[ReleaseRow, ...]
@@ -148,7 +149,7 @@ class ReleaseReport:
             raise ValueError(
                 f"ReleaseReport must have 7 rows; got {len(names)}"
             )
-        if set(names) != set(_CANONICAL_CHECK_NAMES):
+        if set(names) != set(CANONICAL_CHECK_NAMES):
             raise ValueError(
                 f"ReleaseReport rows must be the canonical 7; got {sorted(names)}"
             )

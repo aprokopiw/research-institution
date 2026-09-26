@@ -1,0 +1,163 @@
+# CLAIM_MANIFEST.toml — durable evidence ledger for the release gate.
+#
+# Cited contracts:
+#   @CTR-0101-release-gate-contract   (seven-row release gate)
+#   @CTR-0096-audit-close-out-runtime-evidence-contract
+#   @CTR-0095-prime-directive-check-script-contract
+#   @ADR-0096-audit-close-out-runtime-evidence
+#   @INV-0093-institution-green-gate-canonical
+#   @INV-0094-no-delta-loop-source-stagnation-consult
+#   @ADR-0014-program-agnostic-mathlint-imports
+#   @ADR-0091-mathlint-ships-no-program-launchers
+#
+# Each [[claim]] entry is one release-gate row. The evidence_node_ids
+# list names the pytest node-IDs + scenario names that pin the
+# claim. No claim may have zero evidence; the integrity test at
+# tests/static/test_claim_manifest_integrity.py enforces this.
+#
+# Schema (stable; bump schema_version on any breaking change):
+#
+#   schema_version : int
+#   release_gate_contract : the durable anchor that pins this manifest
+#   [[claim]]
+#   id            : stable claim identifier (C-NN)
+#   name          : one of the seven canonical row names
+#   description   : human-readable description of the claim
+#   required      : true (release gate refuses to close without this)
+#   tier          : one of the §1 closed tiers (unit, property, contract,
+#                   integration, process, deployment, provider_live, soak)
+#   evidence_node_ids : pytest node-IDs + scenario names that pin the claim
+#   status        : PASS | FAIL | NOT_APPLICABLE at the current HEAD
+#
+# The release gate consumes this manifest at row 2; the static test
+# consumes it at tests/static/test_claim_manifest_integrity.py.
+
+schema_version = 1
+release_gate_contract = "@CTR-0101-release-gate-contract"
+
+# C-01 — every canonical tier has at least one test.
+# Per the verify-constitution §1, the closed tier vocabulary is
+# eight members; the institution's tier-marker migration is owned
+# by entries 01/02/03/06. Today no ``tier = "..."`` assignments
+# exist in tests/, so this claim is NOT_APPLICABLE (the migration
+# is in-flight, not yet landed). When the migration lands, the
+# claim flips to PASS.
+[[claim]]
+id = "C-01"
+name = "every_primary_tier_has_at_least_one"
+description = "Every canonical primary tier (unit, property, contract, integration, process, deployment, provider_live, soak) has at least one test that exercises it."
+required = true
+tier = "contract"
+evidence_node_ids = [
+  "tests/static/test_closed_tier_vocabulary.py::test_closed_set_is_exactly_eight",
+  "research_institution/verification/tier_inventory.py::collect_primary_tier_markers",
+]
+status = "NOT_APPLICABLE"
+
+# C-02 — every required claim has non-zero evidence (the meta-claim).
+# This claim pins the manifest's own integrity invariant: the
+# integrity test asserts every claim has ≥1 evidence entry.
+[[claim]]
+id = "C-02"
+name = "every_required_claim_has_evidence"
+description = "Every required claim in CLAIM_MANIFEST.toml has at least one current node-ID or scenario-ID."
+required = true
+tier = "contract"
+evidence_node_ids = [
+  "tests/static/test_claim_manifest_integrity.py::test_every_required_claim_has_at_least_one_evidence",
+  "tests/static/test_claim_manifest_integrity.py::test_claim_manifest_parses",
+]
+status = "PASS"
+
+# C-03 — every scenario has its canonical metadata.
+# The verify-simulation registry carries 14 canonical scenarios
+# (six from entry 04, eight from entry 05); each scenario's
+# metadata is verified by the static check.
+[[claim]]
+id = "C-03"
+name = "every_scenario_has_metadata"
+description = "Every registered verify-simulation scenario carries the canonical 11-key metadata."
+required = true
+tier = "contract"
+evidence_node_ids = [
+  "tests/static/test_closed_scenario_metadata.py::test_every_registered_scenario_has_canonical_keys",
+  "tests/static/test_closed_scenario_metadata.py::test_every_registered_scenario_has_valid_owner",
+  "tests/static/test_closed_scenario_metadata.py::test_every_registered_scenario_has_positive_runtime",
+  "tests/static/test_closed_scenario_metadata.py::test_every_registered_scenario_has_valid_minimum_tier",
+]
+status = "PASS"
+
+# C-04 — every critical mutant from the §12 mutation catalogue is killed.
+# 15 critical mutants, each pinned to a pytest node-id.
+[[claim]]
+id = "C-04"
+name = "every_critical_mutant_killed"
+description = "Every critical mutant in the canonical mutation catalogue is killed by its named test."
+required = true
+tier = "property"
+evidence_node_ids = [
+  "tests/test_mutation_survival.py::StatusEnumMutationTests::test_m1_supersede_and_cancel_produce_distinct_actions",
+  "tests/test_mutation_survival.py::OperatorRequiredVsWaitMutationTests::test_m2_operator_required_does_not_become_wait",
+  "tests/test_mutation_survival.py::EmptyWorkListMutationTests::test_m3_dispatch_carries_at_least_one_work_request",
+  "tests/test_mutation_survival.py::ReasonCodeAliasingMutationTests::test_m4_reason_codes_use_canonical_names",
+  "tests/test_mutation_survival.py::IdempotencyKeyCollisionMutationTests::test_m5_distinct_sources_have_distinct_keys",
+  "tests/test_invariants.py::TestT1aDispatchEnvelopeIdempotencyKey::test_t1a_dispatch_envelope_carries_canonical_idempotency_key",
+  "tests/test_invariants.py::TestT1cCanonicalKeyCollisionFree::test_t1c_canonical_key_collision_free",
+  "tests/test_invariants.py::TestT3aTerminalStatusSet::test_t3a_terminal_status_set_matches_documented_vocab",
+  "tests/test_invariants.py::TestT3bReconcileActionVocabulary::test_t3b_reconcile_action_vocabulary_closed",
+  "tests/test_invariants.py::TestT4aDistinctOperationIds::test_t4a_distinct_operation_ids_produce_distinct_idempotency_keys",
+  "tests/test_invariants.py::TestT5aRecordCreationSeparableness::test_t5a_record_creation_is_separable_from_attempt_start",
+  "tests/test_invariants.py::TestT6aRecordStatusVocabulary::test_t6a_record_status_vocabulary_is_the_documented_set",
+  "tests/test_contracts.py::test_gate_verdict_status_is_frozen",
+  "tests/test_contracts.py::test_exit_code_values_match_operator_convention",
+  "tests/test_contracts.py::test_gate_verdict_from_task_kind_is_total",
+]
+status = "PASS"
+
+# C-05 — flake audit clean (20× repeated random-order runs).
+# The hermetic happy-three-cycle scenario is the canonical
+# flake-audit surface; the dedicated test runs 20× repeated.
+[[claim]]
+id = "C-05"
+name = "flake_audit_clean"
+description = "Twenty repeated random-order runs of happy-three-cycle produce zero flakes."
+required = true
+tier = "property"
+evidence_node_ids = [
+  "tests/simulation/test_flake_audit.py::test_twenty_repeated_runs_produce_zero_flakes",
+  "tests/static/test_random_order_determinism.py::test_random_order_does_not_change_transcript",
+  "happy-three-cycle",
+]
+status = "PASS"
+
+# C-06 — documentation truth audit clean.
+# No active primary-tier marker uses one of the six forbidden
+# strings (e2e, smoke, acceptance, endurance, live, chaos).
+[[claim]]
+id = "C-06"
+name = "documentation_truth_clean"
+description = "No active primary-tier marker in any durable path uses one of the six forbidden strings (e2e, smoke, acceptance, endurance, live, chaos)."
+required = true
+tier = "contract"
+evidence_node_ids = [
+  "tests/static/test_documentation_truth.py::test_no_forbidden_primary_tier_markers_in_durable_docs",
+  "tests/static/test_documentation_truth.py::test_prose_mentions_are_not_flagged",
+  "research_institution/verification/doc_truth.py::audit_documentation_truth",
+]
+status = "PASS"
+
+# C-07 — prime-directive enforcement clean.
+# The canonical script runs with --enforce at research-institution
+# HEAD; per-repo enforcement runs in math, pi_monitor, kaplansky.
+[[claim]]
+id = "C-07"
+name = "prime_directive_enforcement_clean"
+description = "The canonical prime-directive script exits 0 in enforce mode at research-institution HEAD; per-repo check-prime-directive-enforced targets are wired in math, pi_monitor, kaplansky."
+required = true
+tier = "contract"
+evidence_node_ids = [
+  "tests/static/test_canonical_script_identity.py::test_canonical_script_byte_matches_symlinks",
+  "tests/prime_directive/test_extension_bridge.py::test_extension_renders_canonical_globs",
+  "research_institution/prime_directive/extension_bridge.py::render_sanctioned_globs",
+]
+status = "PASS"
