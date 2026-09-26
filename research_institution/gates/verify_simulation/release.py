@@ -96,10 +96,10 @@ CANONICAL_CHECK_NAMES: tuple[str, ...] = (
 # Hermetic runs are sub-second; 5 inline runs keep the CLI
 # invocation under the 30s budget. The full 20× audit is the
 # dedicated ``tests/simulation/test_flake_audit.py``.
-_INLINE_FLAKE_RUNS = 5
+INLINE_FLAKE_RUNS: int = 5
 
 # Canonical scenario used by the flake-audit surface.
-_FLAKE_AUDIT_SCENARIO = "happy-three-cycle"
+FLAKE_AUDIT_SCENARIO: str = "happy-three-cycle"
 
 # Canonical prime-directive check-script (per
 # @CTR-0095-prime-directive-check-script-contract).
@@ -266,7 +266,7 @@ class ReleaseRunner:
         spec_root: Path | None = None,
         artifacts_dir: Path | None = None,
         seed: int | None = 20260925,
-        inline_flake_runs: int = _INLINE_FLAKE_RUNS,
+        inline_flake_runs: int = INLINE_FLAKE_RUNS,
     ) -> None:
         # Default ``repo_root`` to the research-institution root
         # (the directory that contains both ``scripts/`` and
@@ -277,6 +277,40 @@ class ReleaseRunner:
         self.artifacts_dir = artifacts_dir
         self.seed = seed
         self.inline_flake_runs = inline_flake_runs
+
+    def _check_flake_audit(self) -> ReleaseRow:
+        try:
+            scenario = scenario_lookup(FLAKE_AUDIT_SCENARIO)
+        except KeyError:
+            return ReleaseRow(
+                check_name="flake_audit_clean",
+                status="FAIL",
+                detail=f"canonical flake scenario missing: {FLAKE_AUDIT_SCENARIO}",
+                artifact_path=None,
+            )
+        flakes = sum(
+            1
+            for _ in range(self.inline_flake_runs)
+            if run_scenario_hermetic(scenario).verdict != "PASS"
+        )
+        if flakes:
+            return ReleaseRow(
+                check_name="flake_audit_clean",
+                status="FAIL",
+                detail=(
+                    f"{flakes}/{self.inline_flake_runs} inline runs flaked"
+                ),
+                artifact_path=None,
+            )
+        return ReleaseRow(
+            check_name="flake_audit_clean",
+            status="PASS",
+            detail=(
+                f"inline {self.inline_flake_runs}/"
+                f"{self.inline_flake_runs} hermetic runs PASS"
+            ),
+            artifact_path=None,
+        )
 
     # ------------------------------------------------------------------
     # Row 1: every canonical tier has at least one test.
@@ -411,44 +445,6 @@ class ReleaseRunner:
         )
 
     # ------------------------------------------------------------------
-    # Row 5: flake audit clean (inline sample).
-    # ------------------------------------------------------------------
-
-    def _check_flake_audit(self) -> ReleaseRow:
-        try:
-            scenario = scenario_lookup(_FLAKE_AUDIT_SCENARIO)
-        except KeyError:
-            return ReleaseRow(
-                check_name="flake_audit_clean",
-                status="FAIL",
-                detail=f"canonical flake scenario missing: {_FLAKE_AUDIT_SCENARIO}",
-                artifact_path=None,
-            )
-        flakes = sum(
-            1
-            for _ in range(self.inline_flake_runs)
-            if run_scenario_hermetic(scenario).verdict != "PASS"
-        )
-        if flakes:
-            return ReleaseRow(
-                check_name="flake_audit_clean",
-                status="FAIL",
-                detail=(
-                    f"{flakes}/{self.inline_flake_runs} inline runs flaked"
-                ),
-                artifact_path=None,
-            )
-        return ReleaseRow(
-            check_name="flake_audit_clean",
-            status="PASS",
-            detail=(
-                f"inline {self.inline_flake_runs}/"
-                f"{self.inline_flake_runs} hermetic runs PASS"
-            ),
-            artifact_path=None,
-        )
-
-    # ------------------------------------------------------------------
     # Row 6: documentation truth audit clean.
     # ------------------------------------------------------------------
 
@@ -544,7 +540,7 @@ def aggregate_release_report(
     spec_root: Path | None = None,
     artifacts_dir: Path | None = None,
     seed: int | None = 20260925,
-    inline_flake_runs: int = _INLINE_FLAKE_RUNS,
+    inline_flake_runs: int = INLINE_FLAKE_RUNS,
 ) -> ReleaseReport:
     """Convenience wrapper around :class:`ReleaseRunner`."""
     runner = ReleaseRunner(
