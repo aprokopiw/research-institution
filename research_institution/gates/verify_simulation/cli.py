@@ -57,6 +57,7 @@ _VALID_TIERS: tuple[str, ...] = (
     "backup-restore",
     "corruption",
     "disk-pressure",
+    "release",
 )
 
 
@@ -132,6 +133,30 @@ def build_parser() -> argparse.ArgumentParser:
             "without spawning subprocesses."
         ),
     )
+    parser.add_argument(
+        "--artifacts-dir",
+        default=None,
+        help=(
+            "Release tier: directory under which the typed "
+            "ReleaseReport artifact is written."
+        ),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20260925,
+        help="Release tier: deterministic seed for the audit run.",
+    )
+    parser.add_argument(
+        "--inline-flake-runs",
+        type=int,
+        default=5,
+        help=(
+            "Release tier: number of inline hermetic runs the "
+            "release-gate performs (full 20× audit lives in "
+            "tests/simulation/test_flake_audit.py)."
+        ),
+    )
     return parser
 
 
@@ -174,6 +199,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_corruption_tier(args)
     if args.tier == "disk-pressure":
         return _run_disk_pressure_tier(args)
+    if args.tier == "release":
+        return _run_release_tier(args)
     if args.scenario is not None:
         try:
             scenarios = [scenario_lookup(args.scenario)]
@@ -497,6 +524,60 @@ def _resolve_repo_root() -> Path:
             return ancestor
     # Fallback: cwd.
     return Path.cwd()
+
+
+def _run_release_tier(args: argparse.Namespace) -> int:
+    """Release gate tier (per @CTR-0101-release-gate-contract).
+
+    Composes the seven release rows into a typed
+    ``ReleaseReport`` and emits the canonical gate report
+    digest (per @CTR-0096-audit-close-out-runtime-evidence-contract).
+    Exit codes follow the gate-status algebra:
+
+      0   PASS    every release row PASS
+      1   FAIL    at least one row FAILed
+      78  BLOCKED release prerequisites missing
+    """
+    from research_institution.gates.verify_simulation.release import (
+        ReleaseRunner,
+        compute_gate_report_digest,
+    )
+
+    repo_root = _resolve_repo_root()
+    spec_root = repo_root / ".specify" / "specs"
+    artifacts_dir = (
+        Path(args.artifacts_dir).resolve()
+        if getattr(args, "artifacts_dir", None)
+        else None
+    )
+    runner = ReleaseRunner(
+        repo_root=repo_root,
+        spec_root=spec_root,
+        artifacts_dir=artifacts_dir,
+        seed=getattr(args, "seed", 20260925),
+        inline_flake_runs=getattr(args, "inline_flake_runs", 5),
+    )
+    report = runner.run()
+    digest = compute_gate_report_digest(report)
+    payload = {
+        "verdict": report.verdict,
+        "gate_report_digest": digest,
+        "rows": [r.to_dict() for r in report.rows],
+        "seed": report.seed,
+        "elapsed_seconds": report.elapsed_seconds,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"release: {report.verdict} "
+            f"({len(report.rows)} rows, {report.elapsed_seconds:.2f}s)"
+        )
+        print(f"  digest: {digest}")
+        for r in report.rows:
+            detail = r.detail[:80] + ("..." if len(r.detail) > 80 else "")
+            print(f"  - {r.check_name}: {r.status} — {detail}")
+    return 0 if report.verdict == "PASS" else 1
 
 
 if __name__ == "__main__":

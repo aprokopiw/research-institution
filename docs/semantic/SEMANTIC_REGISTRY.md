@@ -81,6 +81,7 @@ Cross-repo-request ADRs (subdirectory `cross-repo-requests/`):
 | `@ADR-0019` | `pi_monitor/docs/adr/0019-live-campaign-sequencing.md` | cross-repository ownership and sequential integration (**superseded** by `@ADR-0001` + `@ADR-0013`) |
 | `@ADR-0021` | `pi_monitor/docs/adr/0021-self-supervision-pi-monitor.md` | self-supervision of pi_monitor |
 | `@ADR-0024` | `pi_monitor/docs/adr/0024-closed-strict-task-marker-vocabulary.md` | closed, strict task-marker vocabulary for the Spec-Kit WorkSource |
+| `@ADR-0027` | `pi_monitor/docs/adr/0027-tick-drift-wedge.md` | tick-drift wedge: nudges worker when raw `tasks.md` checkboxes haven't ticked despite META/attestation/worktree churn; narrower than `no_progress`; routes through existing judge + `RecoveryPolicy` machinery; offers cycle's META + attestation close-out as valid alternative |
 | `@CTR-0001` | `pi_monitor/docs/semantic/contracts/` | work sources and runtimes exchange revisioned execution facts |
 | `@CTR-0002` | `pi_monitor/docs/semantic/contracts/` | worker outcomes are bounded and non-authoritative |
 | `@CTR-0003` | `pi_monitor/docs/semantic/contracts/` | external work-source transport is bounded and fail-closed |

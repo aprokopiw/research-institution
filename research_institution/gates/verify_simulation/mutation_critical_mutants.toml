@@ -1,0 +1,148 @@
+# Critical mutants + their killer tests.
+#
+# Cited contracts:
+#   @CTR-0101-release-gate-contract
+#   @ADR-0096-audit-close-out-runtime-evidence
+#   @ADR-0014-program-agnostic-mathlint-imports
+#   @ADR-0091-mathlint-ships-no-program-launchers
+#
+# Each [[mutant]] entry pins one regression-prone mutation
+# scenario. The ``killer_test`` is the node-id of the unit
+# test that catches the mutation at the source; the
+# ``scenario`` field is set when the killer is a verify-
+# simulation scenario rather than a unit test.
+#
+# This file is the durable data input to the mutation-test
+# gate aggregator (research_institution.gates.verify_simulation
+# .mutation.MutationAggregator). It lives in the production
+# source tree so a fresh agent reading the release-gate
+# contract can resolve the data source without traversing
+# transient paths.
+#
+# Schema (stable; bump schema_version on any breaking change):
+#
+#   schema_version : int
+#   source         : the durable anchor or file that enumerates these mutants
+#   [[mutant]]
+#   id             : stable mutant identifier (M-NN)
+#   description    : what mutation this catches
+#   killer_test    : pytest node-id of the killer test, or "UNRESOLVED"
+#   scenario       : optional verify-simulation scenario name
+#   source         : the source file the mutation is anchored to
+
+schema_version = 1
+source = "research-institution/research_institution/gates/verify_simulation/mutation_critical_mutants.toml"
+
+# M1..M5 come from the canonical mutation-survival test
+# (tests/test_mutation_survival.py). Each entry pins a
+# regression that would otherwise slip through snapshot-only
+# tests.
+
+[[mutant]]
+id = "M1"
+description = "Status enum: a swap of superseded and cancelled would collapse two distinct reconcile actions into one."
+killer_test = "tests/test_mutation_survival.py::StatusEnumMutationTests::test_m1_supersede_and_cancel_produce_distinct_actions"
+scenario = ""
+source = "tests/test_mutation_survival.py"
+
+[[mutant]]
+id = "M2"
+description = "OperatorRequired must not collapse into Wait; a regression that maps OperatorRequired -> wait would silently drop operator-required audits."
+killer_test = "tests/test_mutation_survival.py::OperatorRequiredVsWaitMutationTests::test_m2_operator_required_does_not_become_wait"
+scenario = ""
+source = "tests/test_mutation_survival.py"
+
+[[mutant]]
+id = "M3"
+description = "Empty work list is not a successful dispatch; the supervisor must emit a Wait with reason_code=no_eligible_work rather than park silently."
+killer_test = "tests/test_mutation_survival.py::EmptyWorkListMutationTests::test_m3_dispatch_carries_at_least_one_work_request"
+scenario = ""
+source = "tests/test_mutation_survival.py"
+
+[[mutant]]
+id = "M4"
+description = "Reason code aliasing (e.g. reissued rewritten to reactivated) would let consumers misread the verdict; canonical names must hold."
+killer_test = "tests/test_mutation_survival.py::ReasonCodeAliasingMutationTests::test_m4_reason_codes_use_canonical_names"
+scenario = ""
+source = "tests/test_mutation_survival.py"
+
+[[mutant]]
+id = "M5"
+description = "Idempotency key collision: dropping source_identity from canonical_key would let two distinct programs share a record."
+killer_test = "tests/test_mutation_survival.py::IdempotencyKeyCollisionMutationTests::test_m5_distinct_sources_have_distinct_keys"
+scenario = ""
+source = "tests/test_mutation_survival.py"
+
+# M6..M15 pin invariants from tests/test_invariants.py and
+# tests/test_contracts.py. Each one catches a regression that
+# would otherwise change a typed contract surface silently.
+
+[[mutant]]
+id = "M6"
+description = "Dispatch envelope carries the canonical idempotency key; a regression that drops the key from the wire would break exactly-once."
+killer_test = "tests/test_invariants.py::TestT1aDispatchEnvelopeIdempotencyKey::test_t1a_dispatch_envelope_carries_canonical_idempotency_key"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M7"
+description = "Canonical key collision-freedom: distinct source/revision/op-id tuples must produce distinct keys."
+killer_test = "tests/test_invariants.py::TestT1cCanonicalKeyCollisionFree::test_t1c_canonical_key_collision_free"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M8"
+description = "Terminal status vocabulary is the documented closed set; a regression that adds a non-canonical terminal status would break the audit chain."
+killer_test = "tests/test_invariants.py::TestT3aTerminalStatusSet::test_t3a_terminal_status_set_matches_documented_vocab"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M9"
+description = "Reconcile action vocabulary is the closed set; adding a non-canonical action would silently bypass the action matrix."
+killer_test = "tests/test_invariants.py::TestT3bReconcileActionVocabulary::test_t3b_reconcile_action_vocabulary_closed"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M10"
+description = "Distinct operation IDs produce distinct idempotency keys; a regression that collapses keys by operation_id would break exactly-once."
+killer_test = "tests/test_invariants.py::TestT4aDistinctOperationIds::test_t4a_distinct_operation_ids_produce_distinct_idempotency_keys"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M11"
+description = "Record creation is separable from attempt start; merging them would conflate two distinct audit events."
+killer_test = "tests/test_invariants.py::TestT5aRecordCreationSeparableness::test_t5a_record_creation_is_separable_from_attempt_start"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M12"
+description = "Record status vocabulary is the documented set; an off-vocab status would slip through the gate check."
+killer_test = "tests/test_invariants.py::TestT6aRecordStatusVocabulary::test_t6a_record_status_vocabulary_is_the_documented_set"
+scenario = ""
+source = "tests/test_invariants.py"
+
+[[mutant]]
+id = "M13"
+description = "Gate verdict status is frozen; mutating the closed status set would silently change exit-code semantics."
+killer_test = "tests/test_contracts.py::test_gate_verdict_status_is_frozen"
+scenario = ""
+source = "tests/test_contracts.py"
+
+[[mutant]]
+id = "M14"
+description = "Exit-code values match the operator convention; changing them would break CI gate wiring."
+killer_test = "tests/test_contracts.py::test_exit_code_values_match_operator_convention"
+scenario = ""
+source = "tests/test_contracts.py"
+
+[[mutant]]
+id = "M15"
+description = "Gate verdict from task kind is total; a regression that drops a case would let unknown task kinds map to PASS silently."
+killer_test = "tests/test_contracts.py::test_gate_verdict_from_task_kind_is_total"
+scenario = ""
+source = "tests/test_contracts.py"
